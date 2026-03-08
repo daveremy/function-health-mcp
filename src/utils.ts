@@ -1,4 +1,4 @@
-import type { ExportData, HealthResult } from "./types.js";
+import type { Biomarker, ExportData, HealthResult, SexDetails } from "./types.js";
 
 // ── Shared constants ──
 
@@ -56,15 +56,47 @@ export function deriveExportDate(data: { results: HealthResult[] }, fallback = "
   return fallback;
 }
 
-/** Build a map of biomarker name (lowercase) -> category name from export data */
+/** Build a map of biomarker name (lowercase) -> category names from export data.
+ *  Biomarkers in multiple categories get comma-separated names. */
 export function buildCategoryMap(data: { categories: Array<{ categoryName: string; biomarkers: Array<{ name: string }> }> }): Map<string, string> {
   const map = new Map<string, string>();
   for (const cat of data.categories) {
     for (const bm of cat.biomarkers) {
-      map.set(bm.name.toLowerCase(), cat.categoryName);
+      const key = bm.name.toLowerCase();
+      const existing = map.get(key);
+      map.set(key, existing ? `${existing}, ${cat.categoryName}` : cat.categoryName);
     }
   }
   return map;
+}
+
+/** Resolve sex-appropriate SexDetails for a biomarker based on user's biologicalSex */
+export function resolveSexFilter(userSex?: string): string {
+  return userSex?.toLowerCase() === "male" ? "Male"
+    : userSex?.toLowerCase() === "female" ? "Female"
+    : "All";
+}
+
+/** Pick the best SexDetails entry for the given sex filter */
+export function resolveSexDetails(bm: Biomarker, sexFilter: string): SexDetails | undefined {
+  return bm.sexDetails.find(sd => sd.sex === sexFilter)
+    ?? bm.sexDetails.find(sd => sd.sex === "All")
+    ?? bm.sexDetails[0];
+}
+
+/** Sort comparator for dateOfService descending (latest first) */
+export function byDateDesc(a: HealthResult, b: HealthResult): number {
+  return (b.dateOfService || "").localeCompare(a.dateOfService || "");
+}
+
+/** Filter results matching a biomarker name (fuzzy) and return sorted by date descending */
+export function findMatchingResults(results: HealthResult[], name: string): HealthResult[] {
+  return results
+    .filter(r => {
+      const rName = getResultName(r);
+      return rName ? fuzzyMatch(name, rName) : false;
+    })
+    .sort(byDateDesc);
 }
 
 // ── Misc ──

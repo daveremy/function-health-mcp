@@ -1,5 +1,5 @@
 import type { ExportData, BiomarkerChange, DiffResult, HealthResult } from "./types.js";
-import { getResultName, deriveExportDate, buildCategoryMap } from "./utils.js";
+import { getResultName, deriveExportDate, buildCategoryMap, byDateDesc } from "./utils.js";
 
 /** Compare two exports and classify changes */
 export function diffExports(from: ExportData, to: ExportData): DiffResult {
@@ -85,13 +85,15 @@ interface ResultEntry {
 function buildResultMap(data: ExportData): Map<string, ResultEntry> {
   const map = new Map<string, ResultEntry>();
 
-  // Build biomarker id -> name lookup for fallback
   const idToName = new Map<string, string>();
   for (const bm of data.biomarkers) {
     idToName.set(bm.id, bm.name);
   }
 
-  for (const result of data.results) {
+  // Sort by dateOfService ascending so the latest result wins when duplicates exist
+  const sorted = [...data.results].sort((a, b) => -byDateDesc(a, b));
+
+  for (const result of sorted) {
     const name = findBiomarkerName(result, idToName);
     if (name) {
       map.set(name, {

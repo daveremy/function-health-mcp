@@ -135,7 +135,10 @@ async function retryFetch(url: string, init: RequestInit, attempts = 3): Promise
       if (i > 0) {
         await delay(1000 * Math.pow(2, i));
       }
-      return await fetch(url, init);
+      const res = await fetch(url, init);
+      // Retry on server errors (5xx) — drain body to free the connection
+      if (res.status >= 500 && i < attempts - 1) { await res.body?.cancel(); continue; }
+      return res;
     } catch (err) {
       if (i === attempts - 1) throw err;
     }

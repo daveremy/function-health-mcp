@@ -5,7 +5,7 @@ import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, loadExportResults, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName, buildCategoryMap } from "./utils.js";
+import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults } from "./utils.js";
 import type { ExportData } from "./types.js";
 
 const server = new McpServer({ name: "function-health", version: "0.1.0" });
@@ -84,24 +84,21 @@ server.registerTool("function_health_biomarker", {
   const bm = data.biomarkers.find(b => fuzzyMatch(name, b.name));
   if (!bm) return text({ error: `No biomarker matching "${name}" found.` });
 
-  const matchingResults = data.results.filter(r => {
-    const rName = getResultName(r);
-    return rName ? fuzzyMatch(bm.name, rName) : false;
-  });
-
+  const matchingResults = findMatchingResults(data.results, bm.name);
   const detail = data.biomarkerDetails.find(d => fuzzyMatch(bm.name, d.name));
-  const sexDetail = bm.sexDetails[0];
+
+  const sexFilter = resolveSexFilter(data.profile?.biologicalSex);
+  const sexDetail = resolveSexDetails(bm, sexFilter);
 
   // History: load only results from each export (lightweight, parallel)
   const exportDates = await listExports();
   const allResults = await Promise.all(exportDates.map(d => loadExportResults(d)));
   const history: Array<{ date: string; value: string; inRange: boolean }> = [];
   for (let i = 0; i < exportDates.length; i++) {
-    const result = allResults[i].find(r => {
-      const rName = getResultName(r);
-      return rName ? fuzzyMatch(bm.name, rName) : false;
-    });
-    if (result) {
+    // Pick the latest result for this biomarker within each export
+    const matching = findMatchingResults(allResults[i], bm.name);
+    if (matching.length > 0) {
+      const result = matching[0];
       history.push({
         date: result.dateOfService || exportDates[i],
         value: result.displayResult || result.calculatedResult,
@@ -265,18 +262,20 @@ server.registerTool("function_health_check", {
   inputSchema: z.object({}),
 }, async () => {
   const client = await FunctionHealthClient.create();
-  const [pending, completed, schedules, syncLog] = await Promise.all([
+  const [pending, completed, schedules, syncLog, results] = await Promise.all([
     client.getPendingRequisitions(),
     client.getCompletedRequisitions(),
     client.getPendingSchedules(),
     getSyncLog(),
+    client.getResults(),
   ]);
 
   const lastSync = syncLog.lastSync;
+
   let newResultsAvailable = false;
   if (lastSync && syncLog.exports.length > 0) {
     const lastExport = syncLog.exports[syncLog.exports.length - 1];
-    newResultsAvailable = completed.length > lastExport.resultCount;
+    newResultsAvailable = results.length > lastExport.resultCount;
   }
 
   return text({

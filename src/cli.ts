@@ -4,7 +4,7 @@ import { login, loadCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName } from "./utils.js";
+import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults } from "./utils.js";
 import type { ExportData } from "./types.js";
 
 const program = new Command();
@@ -132,6 +132,17 @@ program
       });
     }
 
+    if (opts.category) {
+      const categoryLookup = buildCategoryMap(data);
+      const catLower = opts.category.toLowerCase();
+      results = results.filter(r => {
+        const name = getResultName(r);
+        if (!name) return false;
+        const cat = categoryLookup.get(name.toLowerCase());
+        return cat ? cat.toLowerCase().includes(catLower) : false;
+      });
+    }
+
     if (opts.status === "in_range") results = results.filter(r => r.inRange);
     else if (opts.status === "out_of_range") results = results.filter(r => !r.inRange);
 
@@ -153,13 +164,11 @@ program
     const bm = data.biomarkers.find(b => fuzzyMatch(name, b.name));
     if (!bm) { console.error(`No biomarker matching "${name}"`); process.exit(1); }
 
-    const result = data.results.find(r => {
-      const rName = getResultName(r);
-      return rName ? fuzzyMatch(bm.name, rName) : false;
-    });
-
+    const result = findMatchingResults(data.results, bm.name)[0];
     const detail = data.biomarkerDetails.find(d => fuzzyMatch(bm.name, d.name));
-    const sexDetail = bm.sexDetails[0];
+
+    const sexFilter = resolveSexFilter(data.profile?.biologicalSex);
+    const sexDetail = resolveSexDetails(bm, sexFilter);
 
     console.log(`\n${bm.name}`);
     console.log(`Value: ${result?.displayResult || result?.calculatedResult || "N/A"} (${result?.inRange ? "In Range" : "Out of Range"})`);

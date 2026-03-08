@@ -8,7 +8,7 @@ import type {
   UserProfile,
 } from "./types.js";
 import { getValidTokens, refreshToken, isTokenExpired } from "./auth.js";
-import { BASE_URL, DEFAULT_HEADERS, delay } from "./utils.js";
+import { BASE_URL, DEFAULT_HEADERS, delay, resolveSexFilter } from "./utils.js";
 
 const RATE_LIMIT_MS = 250;
 
@@ -22,7 +22,7 @@ const BIOMARKER_DETAIL_STRING_FIELDS = [
 export class FunctionHealthClient {
   private tokens: AuthTokens;
   private refreshPromise: Promise<void> | null = null;
-  private lastRequestTime = 0;
+  private requestQueue: Promise<void> = Promise.resolve();
 
   constructor(tokens: AuthTokens) {
     this.tokens = tokens;
@@ -46,17 +46,22 @@ export class FunctionHealthClient {
     }
   }
 
-  /** Rate-limited request with automatic token refresh on 401 */
+  /** Serialize requests through a queue to enforce rate limiting */
   private async request<T>(endpoint: string): Promise<T | null> {
-    await this.ensureFreshToken();
+    return new Promise<T | null>((resolve, reject) => {
+      this.requestQueue = this.requestQueue.then(async () => {
+        try {
+          resolve(await this.doRequest<T>(endpoint));
+        } catch (err) {
+          reject(err);
+        }
+        await delay(RATE_LIMIT_MS);
+      });
+    });
+  }
 
-    // Sequential rate limiting: wait until RATE_LIMIT_MS since last request
-    const now = Date.now();
-    const elapsed = now - this.lastRequestTime;
-    if (elapsed < RATE_LIMIT_MS) {
-      await delay(RATE_LIMIT_MS - elapsed);
-    }
-    this.lastRequestTime = Date.now();
+  private async doRequest<T>(endpoint: string): Promise<T | null> {
+    await this.ensureFreshToken();
 
     const url = `${BASE_URL}${endpoint}`;
     const headers = { ...DEFAULT_HEADERS, Authorization: `Bearer ${this.tokens.idToken}` };
@@ -136,9 +141,7 @@ export class FunctionHealthClient {
 
   /** Fetch detailed info for all biomarkers (sex-specific) */
   async getBiomarkerDetails(biomarkers: Biomarker[], userSex?: string): Promise<BiomarkerDetail[]> {
-    const sexFilter = userSex?.toLowerCase() === "male" ? "Male"
-      : userSex?.toLowerCase() === "female" ? "Female"
-      : "All";
+    const sexFilter = resolveSexFilter(userSex);
 
     const details: BiomarkerDetail[] = [];
 
@@ -158,7 +161,7 @@ export class FunctionHealthClient {
     return details;
   }
 
-  /** Full data export — fetches independent endpoints in parallel, then biomarker details sequentially */
+  /** Full data export — enqueues all endpoints concurrently (rate-limited), then biomarker details sequentially */
   async exportAll(): Promise<ExportData> {
     const [profile, results, biomarkers, categories, recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
       this.getProfile(),
@@ -173,6 +176,11 @@ export class FunctionHealthClient {
       this.getCompletedRequisitions(),
       this.getPendingSchedules(),
     ]);
+
+    // Fail fast if critical data is missing (likely API failure, not empty account)
+    if (results.length === 0 && biomarkers.length === 0) {
+      throw new Error("Export failed: API returned no results and no biomarkers. Possible authentication or server issue.");
+    }
 
     const userSex = profile?.biologicalSex;
     const biomarkerDetails = await this.getBiomarkerDetails(biomarkers, userSex);
