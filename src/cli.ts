@@ -4,8 +4,15 @@ import { login, loadCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults } from "./utils.js";
+import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults, isValidDateString } from "./utils.js";
 import type { ExportData } from "./types.js";
+
+function validateDateOpt(date: string, label: string): void {
+  if (!isValidDateString(date)) {
+    console.error(`Invalid ${label} date format: "${date}". Expected YYYY-MM-DD.`);
+    process.exit(1);
+  }
+}
 
 const program = new Command();
 
@@ -30,7 +37,7 @@ program
   .option("-p, --password <password>", "Password")
   .action(async (opts) => {
     const email = opts.email ?? await prompt("Email: ");
-    const password = opts.password ?? await prompt("Password: ");
+    const password = opts.password ?? await promptSecret("Password: ");
     try {
       const tokens = await login(email, password);
       console.log(`Logged in as ${tokens.email}`);
@@ -242,6 +249,8 @@ program
     const exports = await listExports();
     if (exports.length < 2) { console.error("Need at least 2 exports to compare."); process.exit(1); }
 
+    if (opts.from) validateDateOpt(opts.from, "--from");
+    if (opts.to) validateDateOpt(opts.to, "--to");
     const fromDate = opts.from ?? exports[exports.length - 2];
     const toDate = opts.to ?? exports[exports.length - 1];
 
@@ -262,7 +271,6 @@ program
   .command("export")
   .description("Full JSON export")
   .option("-m, --markdown", "Generate Markdown reports")
-  .option("-o, --output <dir>", "Output directory", "function-health-export")
   .action(async (opts) => {
     try {
       const client = await FunctionHealthClient.create();
@@ -291,6 +299,35 @@ async function prompt(message: string): Promise<string> {
       rl.close();
       resolve(answer.trim());
     });
+  });
+}
+
+async function promptSecret(message: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(message);
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf-8");
+
+    let input = "";
+    const onData = (ch: string) => {
+      if (ch === "\n" || ch === "\r" || ch === "\u0004") {
+        if (stdin.isTTY) stdin.setRawMode(wasRaw ?? false);
+        stdin.pause();
+        stdin.removeListener("data", onData);
+        process.stdout.write("\n");
+        resolve(input.trim());
+      } else if (ch === "\u0003") {
+        process.exit(130);
+      } else if (ch === "\u007f" || ch === "\b") {
+        input = input.slice(0, -1);
+      } else {
+        input += ch;
+      }
+    };
+    stdin.on("data", onData);
   });
 }
 

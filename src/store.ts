@@ -2,40 +2,68 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { ExportData, HealthResult, SyncLog } from "./types.js";
-import { deriveExportDate } from "./utils.js";
+import { deriveExportDate, isValidDateString } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
 const LATEST_PATH = path.join(DATA_DIR, "latest.json");
 const SYNC_LOG_PATH = path.join(DATA_DIR, "sync-log.json");
+const FILE_MODE = 0o600; // rw for owner only
 
 async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
 
-/** Save an export, versioned by date */
-export async function saveExport(data: ExportData, date?: string): Promise<string> {
-  const exportDate = date ?? deriveExportDate(data, new Date().toISOString().slice(0, 10));
-  const exportDir = path.join(EXPORTS_DIR, exportDate);
-  await ensureDir(exportDir);
+function writeSecure(filePath: string, data: string): Promise<void> {
+  return fs.writeFile(filePath, data, { mode: FILE_MODE });
+}
 
-  // Write individual files, latest.json, and sync log in parallel
-  await Promise.all([
-    fs.writeFile(path.join(exportDir, "results.json"), JSON.stringify(data.results, null, 2)),
-    fs.writeFile(path.join(exportDir, "biomarkers.json"), JSON.stringify(data.biomarkers, null, 2)),
-    fs.writeFile(path.join(exportDir, "categories.json"), JSON.stringify(data.categories, null, 2)),
-    fs.writeFile(path.join(exportDir, "biomarker-details.json"), JSON.stringify(data.biomarkerDetails, null, 2)),
-    fs.writeFile(path.join(exportDir, "profile.json"), JSON.stringify(data.profile, null, 2)),
-    fs.writeFile(path.join(exportDir, "recommendations.json"), JSON.stringify(data.recommendations, null, 2)),
-    fs.writeFile(path.join(exportDir, "report.json"), JSON.stringify(data.report, null, 2)),
-    fs.writeFile(path.join(exportDir, "biological-age.json"), JSON.stringify(data.biologicalAge, null, 2)),
-    fs.writeFile(path.join(exportDir, "bmi.json"), JSON.stringify(data.bmi, null, 2)),
-    fs.writeFile(path.join(exportDir, "notes.json"), JSON.stringify(data.notes, null, 2)),
-    fs.writeFile(path.join(exportDir, "requisitions.json"), JSON.stringify(data.requisitions, null, 2)),
-    fs.writeFile(path.join(exportDir, "pending-schedules.json"), JSON.stringify(data.pendingSchedules, null, 2)),
-    fs.writeFile(LATEST_PATH, JSON.stringify(data, null, 2)),
-    updateSyncLog(exportDate, data.results.length),
-  ]);
+/** Validate and sanitize a date string to prevent path traversal */
+function validateDate(date: string): string {
+  if (!isValidDateString(date)) {
+    throw new Error(`Invalid date format: "${date}". Expected YYYY-MM-DD.`);
+  }
+  return date;
+}
+
+/** Save an export atomically — writes to a temp directory then renames */
+export async function saveExport(data: ExportData, date?: string): Promise<string> {
+  const exportDate = validateDate(date ?? deriveExportDate(data, new Date().toISOString().slice(0, 10)));
+  const exportDir = path.join(EXPORTS_DIR, exportDate);
+  const tmpDir = `${exportDir}.tmp.${Date.now()}`;
+  await ensureDir(tmpDir);
+
+  try {
+    // Write individual files to temp directory
+    await Promise.all([
+      writeSecure(path.join(tmpDir, "results.json"), JSON.stringify(data.results, null, 2)),
+      writeSecure(path.join(tmpDir, "biomarkers.json"), JSON.stringify(data.biomarkers, null, 2)),
+      writeSecure(path.join(tmpDir, "categories.json"), JSON.stringify(data.categories, null, 2)),
+      writeSecure(path.join(tmpDir, "biomarker-details.json"), JSON.stringify(data.biomarkerDetails, null, 2)),
+      writeSecure(path.join(tmpDir, "profile.json"), JSON.stringify(data.profile, null, 2)),
+      writeSecure(path.join(tmpDir, "recommendations.json"), JSON.stringify(data.recommendations, null, 2)),
+      writeSecure(path.join(tmpDir, "report.json"), JSON.stringify(data.report, null, 2)),
+      writeSecure(path.join(tmpDir, "biological-age.json"), JSON.stringify(data.biologicalAge, null, 2)),
+      writeSecure(path.join(tmpDir, "bmi.json"), JSON.stringify(data.bmi, null, 2)),
+      writeSecure(path.join(tmpDir, "notes.json"), JSON.stringify(data.notes, null, 2)),
+      writeSecure(path.join(tmpDir, "requisitions.json"), JSON.stringify(data.requisitions, null, 2)),
+      writeSecure(path.join(tmpDir, "pending-schedules.json"), JSON.stringify(data.pendingSchedules, null, 2)),
+    ]);
+
+    // Atomically move temp dir into place (remove old if exists)
+    await fs.rm(exportDir, { recursive: true, force: true });
+    await fs.rename(tmpDir, exportDir);
+
+    // Update latest.json and sync log (non-atomic but non-critical)
+    await Promise.all([
+      writeSecure(LATEST_PATH, JSON.stringify(data, null, 2)),
+      updateSyncLog(exportDate, data.results.length),
+    ]);
+  } catch (err) {
+    // Clean up temp dir on failure
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
 
   return exportDate;
 }
@@ -45,14 +73,17 @@ export async function loadLatest(): Promise<ExportData | null> {
   try {
     const raw = await fs.readFile(LATEST_PATH, "utf-8");
     return JSON.parse(raw) as ExportData;
-  } catch {
+  } catch (err: unknown) {
+    if (isFileNotFound(err)) return null;
+    console.error("Warning: could not read latest export:", (err as Error).message);
     return null;
   }
 }
 
 /** Load a specific export by date */
 export async function loadExport(date: string): Promise<ExportData | null> {
-  const exportDir = path.join(EXPORTS_DIR, date);
+  const safeDate = validateDate(date);
+  const exportDir = path.join(EXPORTS_DIR, safeDate);
   try {
     const [results, biomarkers, categories, biomarkerDetails, profile, recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
       readJson(path.join(exportDir, "results.json")),
@@ -83,15 +114,18 @@ export async function loadExport(date: string): Promise<ExportData | null> {
       requisitions: requisitions ?? [],
       pendingSchedules: pendingSchedules ?? [],
     } as ExportData;
-  } catch {
+  } catch (err: unknown) {
+    if (isFileNotFound(err)) return null;
+    console.error(`Warning: could not load export ${safeDate}:`, (err as Error).message);
     return null;
   }
 }
 
 /** Load only results from a specific export (lightweight for history lookups) */
 export async function loadExportResults(date: string): Promise<HealthResult[]> {
+  const safeDate = validateDate(date);
   try {
-    const raw = await fs.readFile(path.join(EXPORTS_DIR, date, "results.json"), "utf-8");
+    const raw = await fs.readFile(path.join(EXPORTS_DIR, safeDate, "results.json"), "utf-8");
     const data = JSON.parse(raw);
     return Array.isArray(data) ? data : [];
   } catch {
@@ -104,7 +138,7 @@ export async function listExports(): Promise<string[]> {
   try {
     await ensureDir(EXPORTS_DIR);
     const entries = await fs.readdir(EXPORTS_DIR);
-    return entries.filter(e => /^\d{4}-\d{2}-\d{2}/.test(e)).sort();
+    return entries.filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e)).sort();
   } catch {
     return [];
   }
@@ -115,7 +149,10 @@ export async function getSyncLog(): Promise<SyncLog> {
   try {
     const raw = await fs.readFile(SYNC_LOG_PATH, "utf-8");
     return JSON.parse(raw) as SyncLog;
-  } catch {
+  } catch (err: unknown) {
+    if (!isFileNotFound(err)) {
+      console.error("Warning: could not read sync log:", (err as Error).message);
+    }
     return { lastSync: "", exports: [] };
   }
 }
@@ -133,14 +170,19 @@ async function updateSyncLog(date: string, resultCount: number): Promise<void> {
   }
 
   await ensureDir(DATA_DIR);
-  await fs.writeFile(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
+  await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
 }
 
 async function readJson(filePath: string): Promise<unknown> {
   try {
     const raw = await fs.readFile(filePath, "utf-8");
     return JSON.parse(raw);
-  } catch {
-    return null;
+  } catch (err: unknown) {
+    if (isFileNotFound(err)) return null;
+    throw new Error(`Corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
   }
+}
+
+function isFileNotFound(err: unknown): boolean {
+  return err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT";
 }

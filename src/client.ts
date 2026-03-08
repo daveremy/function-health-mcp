@@ -2,11 +2,18 @@ import type {
   AuthTokens,
   Biomarker,
   BiomarkerDetail,
+  BiologicalAge,
+  BMI,
   Category,
   ExportData,
   HealthResult,
+  Note,
+  Recommendation,
+  Requisition,
+  Schedule,
   UserProfile,
 } from "./types.js";
+import { ApiError } from "./types.js";
 import { getValidTokens, refreshToken, isTokenExpired } from "./auth.js";
 import { BASE_URL, DEFAULT_HEADERS, delay, resolveSexFilter } from "./utils.js";
 
@@ -47,8 +54,8 @@ export class FunctionHealthClient {
   }
 
   /** Serialize requests through a queue to enforce rate limiting */
-  private async request<T>(endpoint: string): Promise<T | null> {
-    return new Promise<T | null>((resolve, reject) => {
+  private async request<T>(endpoint: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
       this.requestQueue = this.requestQueue.then(async () => {
         try {
           resolve(await this.doRequest<T>(endpoint));
@@ -60,7 +67,17 @@ export class FunctionHealthClient {
     });
   }
 
-  private async doRequest<T>(endpoint: string): Promise<T | null> {
+  /** Request that returns null on 404 (resource legitimately missing) but throws on other errors */
+  private async requestNullable<T>(endpoint: string): Promise<T | null> {
+    try {
+      return await this.request<T>(endpoint);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  private async doRequest<T>(endpoint: string): Promise<T> {
     await this.ensureFreshToken();
 
     const url = `${BASE_URL}${endpoint}`;
@@ -73,22 +90,26 @@ export class FunctionHealthClient {
       const retry = await fetch(url, {
         headers: { ...DEFAULT_HEADERS, Authorization: `Bearer ${this.tokens.idToken}` },
       });
-      if (!retry.ok) return null;
+      if (!retry.ok) {
+        throw new ApiError(`API request failed after auth retry: ${retry.status} ${retry.statusText}`, retry.status, endpoint);
+      }
       return retry.json() as Promise<T>;
     }
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      throw new ApiError(`API request failed: ${res.status} ${res.statusText}`, res.status, endpoint);
+    }
     return res.json() as Promise<T>;
   }
 
   private async requestArray<T>(endpoint: string): Promise<T[]> {
-    const data = await this.request<T[]>(endpoint);
+    const data = await this.request<T[] | null>(endpoint);
     return Array.isArray(data) ? data : [];
   }
 
   // Core data endpoints
   async getProfile(): Promise<UserProfile | null> {
-    return this.request<UserProfile>("/user");
+    return this.requestNullable<UserProfile>("/user");
   }
 
   async getResults(): Promise<HealthResult[]> {
@@ -104,39 +125,39 @@ export class FunctionHealthClient {
   }
 
   async getBiomarkerData(sexDetailsId: string): Promise<Record<string, unknown> | null> {
-    return this.request<Record<string, unknown>>(`/biomarker-data/${sexDetailsId}`);
+    return this.requestNullable<Record<string, unknown>>(`/biomarker-data/${sexDetailsId}`);
   }
 
-  async getRecommendations(): Promise<Record<string, unknown>[]> {
-    return this.requestArray<Record<string, unknown>>("/recommendations");
+  async getRecommendations(): Promise<Recommendation[]> {
+    return this.requestArray<Recommendation>("/recommendations");
   }
 
   async getResultsReport(): Promise<Record<string, unknown> | null> {
-    return this.request<Record<string, unknown>>("/results-report");
+    return this.requestNullable<Record<string, unknown>>("/results-report");
   }
 
-  async getBiologicalAge(): Promise<Record<string, unknown> | null> {
-    return this.request<Record<string, unknown>>("/biological-calculations/biological-age");
+  async getBiologicalAge(): Promise<BiologicalAge | null> {
+    return this.requestNullable<BiologicalAge>("/biological-calculations/biological-age");
   }
 
-  async getBMI(): Promise<Record<string, unknown> | null> {
-    return this.request<Record<string, unknown>>("/biological-calculations/bmi");
+  async getBMI(): Promise<BMI | null> {
+    return this.requestNullable<BMI>("/biological-calculations/bmi");
   }
 
-  async getNotes(): Promise<Record<string, unknown>[]> {
-    return this.requestArray<Record<string, unknown>>("/notes");
+  async getNotes(): Promise<Note[]> {
+    return this.requestArray<Note>("/notes");
   }
 
-  async getPendingRequisitions(): Promise<Record<string, unknown>[]> {
-    return this.requestArray<Record<string, unknown>>("/requisitions?pending=true");
+  async getPendingRequisitions(): Promise<Requisition[]> {
+    return this.requestArray<Requisition>("/requisitions?pending=true");
   }
 
-  async getCompletedRequisitions(): Promise<Record<string, unknown>[]> {
-    return this.requestArray<Record<string, unknown>>("/requisitions?pending=false");
+  async getCompletedRequisitions(): Promise<Requisition[]> {
+    return this.requestArray<Requisition>("/requisitions?pending=false");
   }
 
-  async getPendingSchedules(): Promise<Record<string, unknown>[]> {
-    return this.requestArray<Record<string, unknown>>("/pending-schedules");
+  async getPendingSchedules(): Promise<Schedule[]> {
+    return this.requestArray<Schedule>("/pending-schedules");
   }
 
   /** Fetch detailed info for all biomarkers (sex-specific) */

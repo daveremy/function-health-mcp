@@ -2,7 +2,9 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { AuthTokens, SavedCredentials } from "./types.js";
-import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay } from "./utils.js";
+import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt } from "./utils.js";
+
+const FILE_MODE = 0o600; // rw for owner only
 
 const CONFIG_DIR = path.join(os.homedir(), ".function-health");
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
@@ -16,7 +18,11 @@ export async function loadCredentials(): Promise<SavedCredentials | null> {
   try {
     const data = await fs.readFile(CREDENTIALS_PATH, "utf-8");
     return JSON.parse(data) as SavedCredentials;
-  } catch {
+  } catch (err: unknown) {
+    // ENOENT is expected (first run); other errors are worth logging
+    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("Warning: could not read credentials:", (err as Error).message);
+    }
     // Also check legacy location
     try {
       const legacyPath = path.join(os.homedir(), ".function-health-cli", "credentials.json");
@@ -30,7 +36,7 @@ export async function loadCredentials(): Promise<SavedCredentials | null> {
 
 export async function saveCredentials(creds: SavedCredentials): Promise<void> {
   await ensureConfigDir();
-  await fs.writeFile(CREDENTIALS_PATH, JSON.stringify(creds, null, 2));
+  await fs.writeFile(CREDENTIALS_PATH, JSON.stringify(creds, null, 2), { mode: FILE_MODE });
 }
 
 export async function clearCredentials(): Promise<void> {
@@ -59,10 +65,12 @@ export async function login(email: string, password: string): Promise<AuthTokens
     throw new Error("Invalid login response — missing tokens");
   }
 
+  const expiresIn = safeParseInt(data.expiresIn, 3600);
+
   const tokens: AuthTokens = {
     idToken: data.idToken,
     refreshToken: data.refreshToken,
-    expiresIn: parseInt(String(data.expiresIn)),
+    expiresIn,
     localId: data.localId,
     email: data.email,
     loginTime: Date.now(),
@@ -93,7 +101,7 @@ export async function refreshToken(tokens: AuthTokens): Promise<AuthTokens> {
     ...tokens,
     idToken: data.access_token,
     refreshToken: data.refresh_token || tokens.refreshToken,
-    expiresIn: parseInt(data.expires_in),
+    expiresIn: safeParseInt(data.expires_in, 3600),
     loginTime: Date.now(),
   };
 

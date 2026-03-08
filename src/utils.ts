@@ -37,11 +37,27 @@ export function fuzzyMatch(query: string, target: string): boolean {
   return t.includes(q);
 }
 
-/** Extract biomarker name from a result object (handles multiple field naming conventions) */
-export function getResultName(r: Record<string, unknown>): string | null {
+/** Extract biomarker name from a result object (handles multiple field naming conventions).
+ *  Optionally accepts an ID-to-name map for fallback resolution via biomarkerId. */
+export function getResultName(r: Record<string, unknown>, idToName?: Map<string, string>): string | null {
   if (typeof r.biomarkerName === "string") return r.biomarkerName;
   if (typeof r.name === "string") return r.name;
+  if (idToName) {
+    if (typeof r.biomarkerId === "string") return idToName.get(r.biomarkerId) ?? null;
+    if (typeof r.biomarker_id === "string") return idToName.get(r.biomarker_id) ?? null;
+  }
   return null;
+}
+
+/** Validate a date string matches YYYY-MM-DD format */
+export function isValidDateString(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+/** Parse an integer with NaN guard — returns the fallback if the value isn't a valid number */
+export function safeParseInt(value: unknown, fallback: number): number {
+  const n = parseInt(String(value));
+  return isNaN(n) ? fallback : n;
 }
 
 /** Derive the export date from result data, with configurable fallback */

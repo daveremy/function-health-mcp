@@ -100,6 +100,48 @@ export interface BiomarkerDetail {
   fullData: Record<string, unknown> | null;
 }
 
+// API response types (loosely structured from upstream API)
+export interface Recommendation {
+  id: string;
+  category?: string;
+  title?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface BiologicalAge {
+  biologicalAge?: number;
+  chronologicalAge?: number;
+  [key: string]: unknown;
+}
+
+export interface BMI {
+  bmi?: number;
+  weight?: number;
+  height?: number;
+  [key: string]: unknown;
+}
+
+export interface Requisition {
+  id: string;
+  status?: string;
+  dateOfService?: string;
+  [key: string]: unknown;
+}
+
+export interface Note {
+  id: string;
+  content?: string;
+  createdAt?: string;
+  [key: string]: unknown;
+}
+
+export interface Schedule {
+  id: string;
+  scheduledDate?: string;
+  [key: string]: unknown;
+}
+
 // Complete export data
 export interface ExportData {
   profile: UserProfile | null;
@@ -107,13 +149,25 @@ export interface ExportData {
   biomarkers: Biomarker[];
   categories: Category[];
   biomarkerDetails: BiomarkerDetail[];
-  recommendations: Record<string, unknown>[];
+  recommendations: Recommendation[];
   report: Record<string, unknown> | null;
-  biologicalAge: Record<string, unknown> | null;
-  bmi: Record<string, unknown> | null;
-  notes: Record<string, unknown>[];
-  requisitions: Record<string, unknown>[];
-  pendingSchedules: Record<string, unknown>[];
+  biologicalAge: BiologicalAge | null;
+  bmi: BMI | null;
+  notes: Note[];
+  requisitions: Requisition[];
+  pendingSchedules: Schedule[];
+}
+
+// API error types
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly endpoint: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 // Sync metadata

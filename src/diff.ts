@@ -1,4 +1,4 @@
-import type { ExportData, BiomarkerChange, DiffResult, HealthResult } from "./types.js";
+import type { ExportData, BiomarkerChange, DiffResult } from "./types.js";
 import { getResultName, deriveExportDate, buildCategoryMap, byDateDesc } from "./utils.js";
 
 /** Compare two exports and classify changes */
@@ -94,7 +94,7 @@ function buildResultMap(data: ExportData): Map<string, ResultEntry> {
   const sorted = [...data.results].sort((a, b) => -byDateDesc(a, b));
 
   for (const result of sorted) {
-    const name = findBiomarkerName(result, idToName);
+    const name = getResultName(result, idToName);
     if (name) {
       map.set(name, {
         value: result.displayResult || result.calculatedResult,
@@ -104,16 +104,4 @@ function buildResultMap(data: ExportData): Map<string, ResultEntry> {
   }
 
   return map;
-}
-
-function findBiomarkerName(result: HealthResult, idToName: Map<string, string>): string | null {
-  // Try the common name fields first (shared logic)
-  const name = getResultName(result);
-  if (name) return name;
-
-  // Fall back to ID-based lookup
-  const r = result as Record<string, unknown>;
-  if (typeof r.biomarkerId === "string") return idToName.get(r.biomarkerId) ?? null;
-  if (typeof r.biomarker_id === "string") return idToName.get(r.biomarker_id) ?? null;
-  return null;
 }
