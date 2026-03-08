@@ -4,11 +4,13 @@ import { login, loadCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults, isValidDateString } from "./utils.js";
+import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate } from "./utils.js";
 import type { ExportData } from "./types.js";
 
 function validateDateOpt(date: string, label: string): void {
-  if (!isValidDateString(date)) {
+  try {
+    validateDate(date);
+  } catch {
     console.error(`Invalid ${label} date format: "${date}". Expected YYYY-MM-DD.`);
     process.exit(1);
   }

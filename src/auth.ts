@@ -2,9 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { AuthTokens, SavedCredentials } from "./types.js";
-import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt } from "./utils.js";
-
-const FILE_MODE = 0o600; // rw for owner only
+import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt, writeSecure, isFileNotFound } from "./utils.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".function-health");
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
@@ -19,8 +17,7 @@ export async function loadCredentials(): Promise<SavedCredentials | null> {
     const data = await fs.readFile(CREDENTIALS_PATH, "utf-8");
     return JSON.parse(data) as SavedCredentials;
   } catch (err: unknown) {
-    // ENOENT is expected (first run); other errors are worth logging
-    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+    if (!isFileNotFound(err)) {
       console.error("Warning: could not read credentials:", (err as Error).message);
     }
     // Also check legacy location
@@ -36,7 +33,7 @@ export async function loadCredentials(): Promise<SavedCredentials | null> {
 
 export async function saveCredentials(creds: SavedCredentials): Promise<void> {
   await ensureConfigDir();
-  await fs.writeFile(CREDENTIALS_PATH, JSON.stringify(creds, null, 2), { mode: FILE_MODE });
+  await writeSecure(CREDENTIALS_PATH, JSON.stringify(creds, null, 2));
 }
 
 export async function clearCredentials(): Promise<void> {

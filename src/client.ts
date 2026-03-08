@@ -103,7 +103,7 @@ export class FunctionHealthClient {
   }
 
   private async requestArray<T>(endpoint: string): Promise<T[]> {
-    const data = await this.request<T[] | null>(endpoint);
+    const data = await this.request<T[]>(endpoint);
     return Array.isArray(data) ? data : [];
   }
 

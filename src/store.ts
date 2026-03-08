@@ -2,28 +2,15 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { ExportData, HealthResult, SyncLog } from "./types.js";
-import { deriveExportDate, isValidDateString } from "./utils.js";
+import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
 const LATEST_PATH = path.join(DATA_DIR, "latest.json");
 const SYNC_LOG_PATH = path.join(DATA_DIR, "sync-log.json");
-const FILE_MODE = 0o600; // rw for owner only
 
 async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
-}
-
-function writeSecure(filePath: string, data: string): Promise<void> {
-  return fs.writeFile(filePath, data, { mode: FILE_MODE });
-}
-
-/** Validate and sanitize a date string to prevent path traversal */
-function validateDate(date: string): string {
-  if (!isValidDateString(date)) {
-    throw new Error(`Invalid date format: "${date}". Expected YYYY-MM-DD.`);
-  }
-  return date;
 }
 
 /** Save an export atomically — writes to a temp directory then renames */
@@ -50,13 +37,13 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
       writeSecure(path.join(tmpDir, "pending-schedules.json"), JSON.stringify(data.pendingSchedules, null, 2)),
     ]);
 
-    // Atomically move temp dir into place (remove old if exists)
+    // Move temp dir into place (remove old if exists)
     await fs.rm(exportDir, { recursive: true, force: true });
     await fs.rename(tmpDir, exportDir);
 
     // Update latest.json and sync log (non-atomic but non-critical)
     await Promise.all([
-      writeSecure(LATEST_PATH, JSON.stringify(data, null, 2)),
+      writeSecure(LATEST_PATH, JSON.stringify(data)),
       updateSyncLog(exportDate, data.results.length),
     ]);
   } catch (err) {
@@ -136,9 +123,8 @@ export async function loadExportResults(date: string): Promise<HealthResult[]> {
 /** List all export dates (sorted ascending) */
 export async function listExports(): Promise<string[]> {
   try {
-    await ensureDir(EXPORTS_DIR);
     const entries = await fs.readdir(EXPORTS_DIR);
-    return entries.filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e)).sort();
+    return entries.filter(e => isValidDateString(e)).sort();
   } catch {
     return [];
   }
@@ -181,8 +167,4 @@ async function readJson(filePath: string): Promise<unknown> {
     if (isFileNotFound(err)) return null;
     throw new Error(`Corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
   }
-}
-
-function isFileNotFound(err: unknown): boolean {
-  return err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT";
 }

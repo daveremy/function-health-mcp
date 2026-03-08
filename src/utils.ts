@@ -1,4 +1,27 @@
+import fs from "fs/promises";
 import type { Biomarker, ExportData, HealthResult, SexDetails } from "./types.js";
+
+// ── File helpers ──
+
+export const FILE_MODE = 0o600; // rw for owner only
+
+/** Write a file with restrictive permissions (owner-only) */
+export function writeSecure(filePath: string, data: string): Promise<void> {
+  return fs.writeFile(filePath, data, { mode: FILE_MODE });
+}
+
+/** Check if an error is a file-not-found (ENOENT) */
+export function isFileNotFound(err: unknown): boolean {
+  return err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/** Validate a date string matches YYYY-MM-DD format, throw if invalid */
+export function validateDate(date: string): string {
+  if (!isValidDateString(date)) {
+    throw new Error(`Invalid date format: "${date}". Expected YYYY-MM-DD.`);
+  }
+  return date;
+}
 
 // ── Shared constants ──
 
