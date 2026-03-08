@@ -1,0 +1,34 @@
+{
+  "name": "function-health-mcp",
+  "version": "0.1.0",
+  "description": "Function Health MCP server and CLI — query lab results, detect changes, track biomarkers",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["function-health", "mcp", "model-context-protocol", "health", "biomarkers", "lab-results", "cli"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daveremy/function-health-mcp"
+  },
+  "bin": {
+    "function-health": "./dist/cli.js",
+    "function-health-mcp": "./dist/mcp.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js dist/mcp.js",
+    "prepublishOnly": "npm run build",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "commander": "^13.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
