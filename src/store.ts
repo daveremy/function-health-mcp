@@ -41,9 +41,9 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
     await fs.rm(exportDir, { recursive: true, force: true });
     await fs.rename(tmpDir, exportDir);
 
-    // Update latest.json and sync log (non-atomic but non-critical)
+    // Update latest pointer and sync log (non-atomic but non-critical)
     await Promise.all([
-      writeSecure(LATEST_PATH, JSON.stringify(data)),
+      writeSecure(LATEST_PATH, JSON.stringify({ date: exportDate })),
       updateSyncLog(exportDate, data.results.length),
     ]);
   } catch (err) {
@@ -55,11 +55,19 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
   return exportDate;
 }
 
-/** Load the most recent export */
+/** Load the most recent export (reads pointer file, then loads the export) */
 export async function loadLatest(): Promise<ExportData | null> {
   try {
     const raw = await fs.readFile(LATEST_PATH, "utf-8");
-    return JSON.parse(raw) as ExportData;
+    const pointer = JSON.parse(raw);
+
+    // Support both old format (full data) and new format (pointer with date)
+    if (typeof pointer?.date === "string") {
+      return loadExport(pointer.date);
+    }
+    // Legacy: latest.json contained full export data
+    if (pointer?.results) return pointer as ExportData;
+    return null;
   } catch (err: unknown) {
     if (isFileNotFound(err)) return null;
     console.error("Warning: could not read latest export:", (err as Error).message);
