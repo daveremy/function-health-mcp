@@ -83,8 +83,8 @@ export async function loadExport(date: string): Promise<ExportData | null> {
   const exportDir = path.join(EXPORTS_DIR, safeDate);
   try {
     const [results, biomarkers, categories, biomarkerDetails, profile, recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
-      readJson(path.join(exportDir, "results.json")),
-      readJson(path.join(exportDir, "biomarkers.json")),
+      readJson(path.join(exportDir, "results.json"), true),
+      readJson(path.join(exportDir, "biomarkers.json"), true),
       readJson(path.join(exportDir, "categories.json")),
       readJson(path.join(exportDir, "biomarker-details.json")),
       readJson(path.join(exportDir, "profile.json")),
@@ -169,12 +169,15 @@ async function updateSyncLog(date: string, resultCount: number): Promise<void> {
   await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
 }
 
-async function readJson(filePath: string): Promise<unknown> {
+async function readJson(filePath: string, required = false): Promise<unknown> {
   try {
     const raw = await fs.readFile(filePath, "utf-8");
     return JSON.parse(raw);
   } catch (err: unknown) {
     if (isFileNotFound(err)) return null;
-    throw new Error(`Corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
+    // For required files, propagate the error; for optional ones, warn and return null
+    if (required) throw new Error(`Corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
+    console.error(`Warning: corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
+    return null;
   }
 }

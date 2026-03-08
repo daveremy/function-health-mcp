@@ -325,6 +325,8 @@ async function promptSecret(message: string): Promise<string> {
         process.stdout.write("\n");
         resolve(input.trim());
       } else if (ch === "\u0003") {
+        stdin.setRawMode(wasRaw ?? false);
+        process.stdout.write("\n");
         process.exit(130);
       } else if (ch === "\u007f" || ch === "\b") {
         input = input.slice(0, -1);
