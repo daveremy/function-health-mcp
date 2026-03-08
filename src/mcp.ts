@@ -5,7 +5,7 @@ import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, loadExportResults, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate } from "./utils.js";
+import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import type { ExportData } from "./types.js";
 
 const MAX_HISTORY_CONCURRENCY = 10;
@@ -49,38 +49,14 @@ server.registerTool("function_health_results", {
   const data = await resolveExport(visit);
   if (!data) return noData();
 
-  let results = data.results;
-
-  const categoryLookup = buildCategoryMap(data);
-
-  if (biomarker) {
-    results = results.filter(r => {
-      const name = getResultName(r);
-      return name ? fuzzyMatch(biomarker, name) : false;
-    });
-  }
-
-  if (category) {
-    const catLower = category.toLowerCase();
-    results = results.filter(r => {
-      const name = getResultName(r);
-      if (!name) return false;
-      const cat = categoryLookup.get(name.toLowerCase());
-      return cat ? cat.toLowerCase().includes(catLower) : false;
-    });
-  }
-
-  if (status === "in_range") {
-    results = results.filter(r => r.inRange);
-  } else if (status === "out_of_range") {
-    results = results.filter(r => !r.inRange);
-  }
+  const categoryLookup = category ? buildCategoryMap(data) : undefined;
+  const results = filterResults(data.results, { biomarker, category, status }, categoryLookup);
 
   return text({
     count: results.length,
     results: results.map(r => ({
       name: getResultName(r),
-      value: r.displayResult || r.calculatedResult,
+      value: getResultValue(r),
       inRange: r.inRange,
       dateOfService: r.dateOfService,
     })),
@@ -119,7 +95,7 @@ server.registerTool("function_health_biomarker", {
       const result = matching[0];
       history.push({
         date: result.dateOfService || exportDates[i],
-        value: result.displayResult || result.calculatedResult,
+        value: getResultValue(result),
         inRange: result.inRange,
       });
     }
@@ -127,7 +103,7 @@ server.registerTool("function_health_biomarker", {
 
   return text({
     name: bm.name,
-    currentValue: matchingResults[0]?.displayResult || matchingResults[0]?.calculatedResult || null,
+    currentValue: matchingResults[0] ? getResultValue(matchingResults[0]) : null,
     inRange: matchingResults[0]?.inRange ?? null,
     optimalRange: sexDetail ? { low: sexDetail.optimalRangeLow, high: sexDetail.optimalRangeHigh } : null,
     referenceRange: sexDetail ? { low: sexDetail.questRefRangeLow, high: sexDetail.questRefRangeHigh } : null,
@@ -162,7 +138,7 @@ server.registerTool("function_health_summary", {
     .filter(r => !r.inRange)
     .map(r => ({
       name: getResultName(r),
-      value: r.displayResult || r.calculatedResult,
+      value: getResultValue(r),
     }));
 
   return text({
@@ -188,13 +164,7 @@ server.registerTool("function_health_categories", {
   const data = await loadLatest();
   if (!data) return noData();
 
-  const outOfRangeNames = new Set<string>();
-  for (const r of data.results) {
-    if (!r.inRange) {
-      const name = getResultName(r);
-      if (name) outOfRangeNames.add(name.toLowerCase());
-    }
-  }
+  const outOfRangeNames = buildOutOfRangeSet(data.results);
 
   const categories = data.categories.map(cat => ({
     name: cat.categoryName,
@@ -244,7 +214,7 @@ server.registerTool("function_health_sync", {
 
   if (!force && lastSync) {
     const sinceLast = Date.now() - new Date(lastSync).getTime();
-    if (sinceLast < 3600000) {
+    if (sinceLast < SYNC_COOLDOWN_MS) {
       return text({
         synced: false,
         message: `Last sync was ${Math.round(sinceLast / 60000)} minutes ago. Use force=true to re-sync.`,
@@ -267,7 +237,7 @@ server.registerTool("function_health_sync", {
     synced: true,
     exportDate,
     resultCount: data.results.length,
-    newResults: newResults > 0 ? newResults : 0,
+    newResults: Math.max(0, newResults),
     lastSync: new Date().toISOString(),
     hasChanges: newResults > 0,
   });
@@ -279,21 +249,23 @@ server.registerTool("function_health_check", {
   inputSchema: z.object({}),
 }, safeTool(async () => {
   const client = await FunctionHealthClient.create();
-  const [pending, completed, schedules, syncLog, results] = await Promise.all([
+  const [pending, completed, schedules, syncLog] = await Promise.all([
     client.getPendingRequisitions(),
     client.getCompletedRequisitions(),
     client.getPendingSchedules(),
     getSyncLog(),
-    client.getResults(),
   ]);
 
   const lastSync = syncLog.lastSync;
 
-  let newResultsAvailable = false;
-  if (lastSync && syncLog.exports.length > 0) {
-    const lastExport = syncLog.exports[syncLog.exports.length - 1];
-    newResultsAvailable = results.length > lastExport.resultCount;
-  }
+  // Compare completed requisition count against last export to detect new results
+  // Without a baseline (no prior sync), we can't know if results are "new"
+  const lastExport = syncLog.exports.length > 0
+    ? syncLog.exports[syncLog.exports.length - 1]
+    : null;
+  const newResultsAvailable = lastExport
+    ? completed.length > lastExport.resultCount
+    : false;
 
   return text({
     pendingRequisitions: pending.length,

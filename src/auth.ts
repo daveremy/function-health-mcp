@@ -2,14 +2,14 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { AuthTokens, SavedCredentials } from "./types.js";
-import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt, writeSecure, isFileNotFound } from "./utils.js";
+import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt, writeSecure, isFileNotFound, DIR_MODE } from "./utils.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".function-health");
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
 const TOKEN_REFRESH_BUFFER = 300; // seconds before expiry to refresh
 
 async function ensureConfigDir(): Promise<void> {
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
+  await fs.mkdir(CONFIG_DIR, { recursive: true, mode: DIR_MODE });
 }
 
 export async function loadCredentials(): Promise<SavedCredentials | null> {
@@ -89,6 +89,7 @@ export async function refreshToken(tokens: AuthTokens): Promise<AuthTokens> {
   });
 
   if (!res.ok) {
+    await res.body?.cancel();
     throw new Error(`Token refresh failed: ${res.status}`);
   }
 

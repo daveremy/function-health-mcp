@@ -40,16 +40,21 @@ export class FunctionHealthClient {
     return new FunctionHealthClient(tokens);
   }
 
+  /** Refresh tokens with deduplication — concurrent callers share the same refresh */
+  private async doRefresh(): Promise<void> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = (async () => {
+        this.tokens = await refreshToken(this.tokens);
+      })().finally(() => {
+        this.refreshPromise = null;
+      });
+    }
+    await this.refreshPromise;
+  }
+
   private async ensureFreshToken(): Promise<void> {
     if (isTokenExpired(this.tokens)) {
-      if (!this.refreshPromise) {
-        this.refreshPromise = (async () => {
-          this.tokens = await refreshToken(this.tokens);
-        })().finally(() => {
-          this.refreshPromise = null;
-        });
-      }
-      await this.refreshPromise;
+      await this.doRefresh();
     }
   }
 
@@ -86,17 +91,20 @@ export class FunctionHealthClient {
     const res = await fetch(url, { headers });
 
     if (res.status === 401) {
-      this.tokens = await refreshToken(this.tokens);
+      await res.body?.cancel();
+      await this.doRefresh();
       const retry = await fetch(url, {
         headers: { ...DEFAULT_HEADERS, Authorization: `Bearer ${this.tokens.idToken}` },
       });
       if (!retry.ok) {
+        await retry.body?.cancel();
         throw new ApiError(`API request failed after auth retry: ${retry.status} ${retry.statusText}`, retry.status, endpoint);
       }
       return retry.json() as Promise<T>;
     }
 
     if (!res.ok) {
+      await res.body?.cancel();
       throw new ApiError(`API request failed: ${res.status} ${res.statusText}`, res.status, endpoint);
     }
     return res.json() as Promise<T>;
@@ -166,48 +174,60 @@ export class FunctionHealthClient {
     return this.requestArray<Schedule>("/pending-schedules");
   }
 
-  /** Fetch detailed info for all biomarkers (sex-specific) */
+  /** Fetch detailed info for all biomarkers (sex-specific).
+   *  Requests are enqueued in parallel — the rate-limited queue serializes them. */
   async getBiomarkerDetails(biomarkers: Biomarker[], userSex?: string): Promise<BiomarkerDetail[]> {
     const sexFilter = resolveSexFilter(userSex);
 
-    const details: BiomarkerDetail[] = [];
-
-    for (const bm of biomarkers) {
+    const promises = biomarkers.map(async (bm) => {
       const match = bm.sexDetails.find(sd => sd.sex === sexFilter)
         ?? bm.sexDetails.find(sd => sd.sex === "All");
 
-      if (!match) {
-        details.push(makeBiomarkerDetail(bm, sexFilter, null));
-        continue;
+      if (!match) return makeBiomarkerDetail(bm, sexFilter, null);
+
+      // Gracefully degrade on per-biomarker failures so one transient error
+      // doesn't abort the entire export
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = await this.getBiomarkerData(match.id);
+      } catch {
+        // Fall through with null — makeBiomarkerDetail handles missing data
       }
+      return makeBiomarkerDetail(bm, sexFilter, data);
+    });
 
-      const data = await this.getBiomarkerData(match.id);
-      details.push(makeBiomarkerDetail(bm, sexFilter, data));
-    }
-
-    return details;
+    return Promise.all(promises);
   }
 
-  /** Full data export — enqueues all endpoints concurrently (rate-limited), then biomarker details sequentially */
+  /** Full data export — core endpoints fail fast, optional endpoints degrade gracefully */
   async exportAll(): Promise<ExportData> {
-    const [profile, results, biomarkers, categories, recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
+    // Core endpoints — failures here should abort the export
+    const [profile, results, biomarkers, categories] = await Promise.all([
       this.getProfile(),
       this.getResults(),
       this.getBiomarkers(),
       this.getCategories(),
-      this.getRecommendations(),
-      this.getResultsReport(),
-      this.getBiologicalAge(),
-      this.getBMI(),
-      this.getNotes(),
-      this.getCompletedRequisitions(),
-      this.getPendingSchedules(),
     ]);
 
-    // Fail fast if critical data is missing (likely API failure, not empty account)
-    if (results.length === 0 && biomarkers.length === 0) {
-      throw new Error("Export failed: API returned no results and no biomarkers. Possible authentication or server issue.");
+    // Fail fast if API returned nothing at all (likely auth failure, not empty account)
+    if (results.length === 0 && biomarkers.length === 0 && !profile && categories.length === 0) {
+      throw new Error("Export failed: API returned no data. Possible authentication or server issue.");
     }
+
+    // Optional endpoints — degrade to defaults on transient errors
+    const optionalFetch = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try { return await fn(); } catch { return fallback; }
+    };
+
+    const [recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
+      optionalFetch(() => this.getRecommendations(), []),
+      optionalFetch(() => this.getResultsReport(), null),
+      optionalFetch(() => this.getBiologicalAge(), null),
+      optionalFetch(() => this.getBMI(), null),
+      optionalFetch(() => this.getNotes(), []),
+      optionalFetch(() => this.getCompletedRequisitions(), []),
+      optionalFetch(() => this.getPendingSchedules(), []),
+    ]);
 
     const userSex = profile?.biologicalSex;
     const biomarkerDetails = await this.getBiomarkerDetails(biomarkers, userSex);

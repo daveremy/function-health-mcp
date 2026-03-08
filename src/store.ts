@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { ExportData, HealthResult, SyncLog } from "./types.js";
-import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate } from "./utils.js";
+import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
@@ -10,7 +10,7 @@ const LATEST_PATH = path.join(DATA_DIR, "latest.json");
 const SYNC_LOG_PATH = path.join(DATA_DIR, "sync-log.json");
 
 async function ensureDir(dir: string): Promise<void> {
-  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(dir, { recursive: true, mode: DIR_MODE });
 }
 
 /** Save an export atomically — writes to a temp directory then renames */
@@ -40,7 +40,13 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
     // Move temp dir into place — rename old dir first to avoid data loss window
     const backupDir = `${exportDir}.old.${Date.now()}`;
     await fs.rename(exportDir, backupDir).catch(() => {}); // ok if doesn't exist
-    await fs.rename(tmpDir, exportDir);
+    try {
+      await fs.rename(tmpDir, exportDir);
+    } catch (renameErr) {
+      // Restore backup if the final rename fails
+      await fs.rename(backupDir, exportDir).catch(() => {});
+      throw renameErr;
+    }
     await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
 
     // Update latest pointer and sync log (non-atomic but non-critical)
@@ -65,7 +71,7 @@ export async function loadLatest(): Promise<ExportData | null> {
 
     // Support both old format (full data) and new format (pointer with date)
     if (typeof pointer?.date === "string") {
-      return loadExport(pointer.date);
+      return await loadExport(pointer.date);
     }
     // Legacy: latest.json contained full export data
     if (pointer?.results) return pointer as ExportData;
@@ -174,9 +180,8 @@ async function readJson(filePath: string, required = false): Promise<unknown> {
     const raw = await fs.readFile(filePath, "utf-8");
     return JSON.parse(raw);
   } catch (err: unknown) {
+    if (required) throw new Error(`Missing or corrupt file: ${filePath}: ${(err as Error).message}`);
     if (isFileNotFound(err)) return null;
-    // For required files, propagate the error; for optional ones, warn and return null
-    if (required) throw new Error(`Corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
     console.error(`Warning: corrupt or unreadable file: ${filePath}: ${(err as Error).message}`);
     return null;
   }

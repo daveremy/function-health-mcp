@@ -4,6 +4,7 @@ import type { Biomarker, ExportData, HealthResult, SexDetails } from "./types.js
 // ── File helpers ──
 
 export const FILE_MODE = 0o600; // rw for owner only
+export const DIR_MODE = 0o700; // rwx for owner only
 
 /** Write a file with restrictive permissions (owner-only).
  *  Explicitly chmod after write to enforce permissions on pre-existing files. */
@@ -74,9 +75,16 @@ export function getResultName(r: Record<string, unknown>, idToName?: Map<string,
   return null;
 }
 
-/** Validate a date string matches YYYY-MM-DD format */
+/** Validate a date string is a real YYYY-MM-DD date */
 export function isValidDateString(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  // Parse as UTC to avoid timezone shifts
+  const d = new Date(s + "T00:00:00Z");
+  if (isNaN(d.getTime())) return false;
+  // Verify month/day didn't overflow (e.g. 2023-13-45 → valid Date but wrong)
+  return d.getUTCFullYear() === parseInt(s.slice(0, 4))
+    && d.getUTCMonth() + 1 === parseInt(s.slice(5, 7))
+    && d.getUTCDate() === parseInt(s.slice(8, 10));
 }
 
 /** Parse an integer with NaN guard — returns the fallback if the value isn't a valid number */
@@ -138,6 +146,61 @@ export function findMatchingResults(results: HealthResult[], name: string): Heal
       return rName ? fuzzyMatch(name, rName) : false;
     })
     .sort(byDateDesc);
+}
+
+// ── Constants ──
+
+export const SYNC_COOLDOWN_MS = 3600000; // 1 hour
+
+// ── Result helpers ──
+
+/** Extract display value from a result (prefers displayResult over calculatedResult) */
+export function getResultValue(r: HealthResult): string {
+  return r.displayResult || r.calculatedResult;
+}
+
+/** Build a set of lowercase biomarker names that are out of range */
+export function buildOutOfRangeSet(results: HealthResult[]): Set<string> {
+  const set = new Set<string>();
+  for (const r of results) {
+    if (!r.inRange) {
+      const name = getResultName(r);
+      if (name) set.add(name.toLowerCase());
+    }
+  }
+  return set;
+}
+
+/** Filter results by biomarker name, category, and status */
+export function filterResults(
+  results: HealthResult[],
+  opts: { biomarker?: string; category?: string; status?: string },
+  categoryLookup?: Map<string, string>,
+): HealthResult[] {
+  let filtered = results;
+
+  if (opts.biomarker) {
+    const bm = opts.biomarker;
+    filtered = filtered.filter(r => {
+      const name = getResultName(r);
+      return name ? fuzzyMatch(bm, name) : false;
+    });
+  }
+
+  if (opts.category && categoryLookup) {
+    const catLower = opts.category.toLowerCase();
+    filtered = filtered.filter(r => {
+      const name = getResultName(r);
+      if (!name) return false;
+      const cat = categoryLookup.get(name.toLowerCase());
+      return cat ? cat.toLowerCase().includes(catLower) : false;
+    });
+  }
+
+  if (opts.status === "in_range") filtered = filtered.filter(r => r.inRange);
+  else if (opts.status === "out_of_range") filtered = filtered.filter(r => !r.inRange);
+
+  return filtered;
 }
 
 // ── Misc ──

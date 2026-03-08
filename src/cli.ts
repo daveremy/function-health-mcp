@@ -4,7 +4,7 @@ import { login, loadCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
-import { fuzzyMatch, getResultName, buildCategoryMap, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate } from "./utils.js";
+import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import type { ExportData } from "./types.js";
 
 function validateDateOpt(date: string, label: string): void {
@@ -81,7 +81,7 @@ program
         const syncLog = await getSyncLog();
         if (syncLog.lastSync) {
           const sinceLast = Date.now() - new Date(syncLog.lastSync).getTime();
-          if (sinceLast < 3600000) {
+          if (sinceLast < SYNC_COOLDOWN_MS) {
             console.log(`Last sync was ${Math.round(sinceLast / 60000)} minutes ago. Use --force to re-sync.`);
             return;
           }
@@ -132,32 +132,12 @@ program
     const data = await loadLatest();
     requireData(data);
 
-    let results = data.results;
-
-    if (opts.biomarker) {
-      results = results.filter(r => {
-        const name = getResultName(r);
-        return name ? fuzzyMatch(opts.biomarker, name) : false;
-      });
-    }
-
-    if (opts.category) {
-      const categoryLookup = buildCategoryMap(data);
-      const catLower = opts.category.toLowerCase();
-      results = results.filter(r => {
-        const name = getResultName(r);
-        if (!name) return false;
-        const cat = categoryLookup.get(name.toLowerCase());
-        return cat ? cat.toLowerCase().includes(catLower) : false;
-      });
-    }
-
-    if (opts.status === "in_range") results = results.filter(r => r.inRange);
-    else if (opts.status === "out_of_range") results = results.filter(r => !r.inRange);
+    const categoryLookup = opts.category ? buildCategoryMap(data) : undefined;
+    const results = filterResults(data.results, opts, categoryLookup);
 
     console.log(JSON.stringify(results.map(r => ({
       name: getResultName(r),
-      value: r.displayResult || r.calculatedResult,
+      value: getResultValue(r),
       inRange: r.inRange,
       date: r.dateOfService,
     })), null, 2));
@@ -180,7 +160,7 @@ program
     const sexDetail = resolveSexDetails(bm, sexFilter);
 
     console.log(`\n${bm.name}`);
-    console.log(`Value: ${result?.displayResult || result?.calculatedResult || "N/A"} (${result?.inRange ? "In Range" : "Out of Range"})`);
+    console.log(`Value: ${result ? getResultValue(result) || "N/A" : "N/A"} (${result?.inRange ? "In Range" : "Out of Range"})`);
     if (sexDetail) {
       console.log(`Optimal: ${sexDetail.optimalRangeLow} - ${sexDetail.optimalRangeHigh}`);
     }
@@ -213,7 +193,7 @@ program
     if (outOfRange.length > 0) {
       console.log(`\nOut of range markers:`);
       for (const r of outOfRange) {
-        console.log(`  - ${getResultName(r) || "Unknown"}: ${r.displayResult || r.calculatedResult}`);
+        console.log(`  - ${getResultName(r) || "Unknown"}: ${getResultValue(r)}`);
       }
     }
   });
@@ -225,14 +205,7 @@ program
     const data = await loadLatest();
     requireData(data);
 
-    // Pre-build set of out-of-range names for O(1) lookup
-    const outOfRangeNames = new Set<string>();
-    for (const r of data.results) {
-      if (!r.inRange) {
-        const name = getResultName(r);
-        if (name) outOfRangeNames.add(name.toLowerCase());
-      }
-    }
+    const outOfRangeNames = buildOutOfRangeSet(data.results);
 
     for (const cat of data.categories) {
       const outCount = cat.biomarkers.filter(bm => outOfRangeNames.has(bm.name.toLowerCase())).length;

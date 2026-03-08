@@ -1,5 +1,5 @@
 import type { ExportData, BiomarkerChange, DiffResult } from "./types.js";
-import { getResultName, deriveExportDate, buildCategoryMap, byDateDesc } from "./utils.js";
+import { getResultName, getResultValue, deriveExportDate, buildCategoryMap, byDateDesc } from "./utils.js";
 
 /** Compare two exports and classify changes */
 export function diffExports(from: ExportData, to: ExportData): DiffResult {
@@ -97,7 +97,7 @@ function buildResultMap(data: ExportData): Map<string, ResultEntry> {
     const name = getResultName(result, idToName);
     if (name) {
       map.set(name, {
-        value: result.displayResult || result.calculatedResult,
+        value: getResultValue(result),
         inRange: result.inRange,
       });
     }
