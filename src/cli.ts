@@ -305,18 +305,21 @@ async function prompt(message: string): Promise<string> {
 }
 
 async function promptSecret(message: string): Promise<string> {
+  // Fall back to regular prompt for non-TTY (piped input)
+  if (!process.stdin.isTTY) return prompt(message);
+
   return new Promise((resolve) => {
     process.stdout.write(message);
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
-    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.setRawMode(true);
     stdin.resume();
     stdin.setEncoding("utf-8");
 
     let input = "";
     const onData = (ch: string) => {
       if (ch === "\n" || ch === "\r" || ch === "\u0004") {
-        if (stdin.isTTY) stdin.setRawMode(wasRaw ?? false);
+        stdin.setRawMode(wasRaw ?? false);
         stdin.pause();
         stdin.removeListener("data", onData);
         process.stdout.write("\n");

@@ -37,9 +37,11 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
       writeSecure(path.join(tmpDir, "pending-schedules.json"), JSON.stringify(data.pendingSchedules, null, 2)),
     ]);
 
-    // Move temp dir into place (remove old if exists)
-    await fs.rm(exportDir, { recursive: true, force: true });
+    // Move temp dir into place — rename old dir first to avoid data loss window
+    const backupDir = `${exportDir}.old.${Date.now()}`;
+    await fs.rename(exportDir, backupDir).catch(() => {}); // ok if doesn't exist
     await fs.rename(tmpDir, exportDir);
+    await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
 
     // Update latest pointer and sync log (non-atomic but non-critical)
     await Promise.all([

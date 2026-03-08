@@ -212,8 +212,8 @@ server.registerTool("function_health_changes", {
   title: "Compare Visits",
   description: "Compare results between visits to see what improved, worsened, or changed significantly",
   inputSchema: z.object({
-    from_visit: z.string().optional().describe("From visit date (defaults to previous)"),
-    to_visit: z.string().optional().describe("To visit date (defaults to latest)"),
+    from_visit: z.string().optional().describe("From visit date YYYY-MM-DD (defaults to previous)"),
+    to_visit: z.string().optional().describe("To visit date YYYY-MM-DD (defaults to latest)"),
   }),
 }, safeTool(async ({ from_visit, to_visit }) => {
   const exports = await listExports();
@@ -331,7 +331,7 @@ server.registerTool("function_health_report", {
   title: "Clinician Report",
   description: "Get the full clinician report for a visit",
   inputSchema: z.object({
-    visit: z.string().optional().describe("'latest' (default) or a visit date"),
+    visit: z.string().optional().describe("'latest' (default) or a visit date (YYYY-MM-DD)"),
   }),
 }, safeTool(async ({ visit }) => {
   const data = await resolveExport(visit);

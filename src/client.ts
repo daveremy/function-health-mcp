@@ -103,8 +103,14 @@ export class FunctionHealthClient {
   }
 
   private async requestArray<T>(endpoint: string): Promise<T[]> {
-    const data = await this.request<T[]>(endpoint);
-    return Array.isArray(data) ? data : [];
+    try {
+      const data = await this.request<T[]>(endpoint);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      // 404 is expected for optional collection endpoints on new accounts
+      if (err instanceof ApiError && err.status === 404) return [];
+      throw err;
+    }
   }
 
   // Core data endpoints
