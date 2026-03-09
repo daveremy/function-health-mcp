@@ -7,18 +7,19 @@ import { login, loadCredentials, getValidTokens } from "./auth.js";
 import { loadLatest, loadExport, loadExportResults, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
+import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
 
 const MAX_HISTORY_CONCURRENCY = 10;
 
-const server = new McpServer({ name: "function-health", version: "0.1.0" });
+const server = new McpServer({ name: "function-health", version: VERSION });
 
 function text(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
 function noData() {
-  return text({ error: "No data available. Run function_health_sync first." });
+  return text({ error: "No data available. Run fh_sync first." });
 }
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: true };
@@ -37,7 +38,7 @@ function safeTool<T>(fn: (args: T) => Promise<ToolResult>): (args: T) => Promise
 
 // ── Auth Tools ──
 
-server.registerTool("function_health_login", {
+server.registerTool("fh_login", {
   title: "Login",
   description: "Authenticate with Function Health. Required before syncing data. Takes email and password.",
   inputSchema: z.object({
@@ -49,11 +50,11 @@ server.registerTool("function_health_login", {
   return text({
     authenticated: true,
     email: tokens.email,
-    message: "Login successful. You can now run function_health_sync to pull your data.",
+    message: "Login successful. You can now run fh_sync to pull your data.",
   });
 }));
 
-server.registerTool("function_health_status", {
+server.registerTool("fh_status", {
   title: "Auth & Data Status",
   description: "Check authentication status, data availability, and sync history. Use this to determine if the user needs to login or sync.",
   inputSchema: z.object({}),
@@ -87,7 +88,7 @@ server.registerTool("function_health_status", {
 
 // ── Core Query Tools ──
 
-server.registerTool("function_health_results", {
+server.registerTool("fh_results", {
   title: "Lab Results",
   description: "Query lab results with filtering by biomarker name, category, status (in_range/out_of_range), or visit",
   inputSchema: z.object({
@@ -114,7 +115,7 @@ server.registerTool("function_health_results", {
   });
 }));
 
-server.registerTool("function_health_biomarker", {
+server.registerTool("fh_biomarker", {
   title: "Biomarker Deep Dive",
   description: "Get detailed info on a specific biomarker: current value, optimal range, history, clinical context, recommendations",
   inputSchema: z.object({
@@ -172,7 +173,7 @@ server.registerTool("function_health_biomarker", {
   });
 }));
 
-server.registerTool("function_health_summary", {
+server.registerTool("fh_summary", {
   title: "Health Summary",
   description: "High-level health summary: total markers, in/out of range counts, biological age, BMI, top concerns",
   inputSchema: z.object({
@@ -207,7 +208,7 @@ server.registerTool("function_health_summary", {
   });
 }));
 
-server.registerTool("function_health_categories", {
+server.registerTool("fh_categories", {
   title: "Biomarker Categories",
   description: "List all biomarker categories with counts and out-of-range markers",
   inputSchema: z.object({}),
@@ -229,7 +230,7 @@ server.registerTool("function_health_categories", {
 
 // ── Change Detection Tools ──
 
-server.registerTool("function_health_changes", {
+server.registerTool("fh_changes", {
   title: "Compare Visits",
   description: "Compare results between visits to see what improved, worsened, or changed significantly",
   inputSchema: z.object({
@@ -238,7 +239,7 @@ server.registerTool("function_health_changes", {
   }),
 }, safeTool(async ({ from_visit, to_visit }) => {
   const exports = await listExports();
-  if (exports.length < 2) return text({ error: "Need at least 2 exports to compare. Run function_health_sync." });
+  if (exports.length < 2) return text({ error: "Need at least 2 exports to compare. Run fh_sync." });
 
   const fromDate = from_visit ?? exports[exports.length - 2];
   const toDate = to_visit ?? exports[exports.length - 1];
@@ -253,7 +254,7 @@ server.registerTool("function_health_changes", {
   return text(diffExports(fromData, toData));
 }));
 
-server.registerTool("function_health_sync", {
+server.registerTool("fh_sync", {
   title: "Sync Data",
   description: "Pull latest data from Function Health API and store locally. Detects new results. First sync takes 30-60 seconds — warn the user to expect a wait.",
   inputSchema: z.object({
@@ -296,7 +297,7 @@ server.registerTool("function_health_sync", {
   });
 }));
 
-server.registerTool("function_health_check", {
+server.registerTool("fh_check", {
   title: "Check for New Results",
   description: "Quick check for new results (lightweight — checks requisition status)",
   inputSchema: z.object({}),
@@ -331,7 +332,7 @@ server.registerTool("function_health_check", {
 
 // ── Reference Tools ──
 
-server.registerTool("function_health_recommendations", {
+server.registerTool("fh_recommendations", {
   title: "Recommendations",
   description: "Get Function Health's health recommendations, optionally filtered by category",
   inputSchema: z.object({
@@ -352,7 +353,7 @@ server.registerTool("function_health_recommendations", {
   return text(recs);
 }));
 
-server.registerTool("function_health_report", {
+server.registerTool("fh_report", {
   title: "Clinician Report",
   description: "Get the full clinician report for a visit",
   inputSchema: z.object({
@@ -363,6 +364,60 @@ server.registerTool("function_health_report", {
   if (!data) return noData();
 
   return text(data.report);
+}));
+
+// ── Version Tool ──
+
+/** Compare two semver strings numerically (e.g. "0.2.0" vs "0.3.1") */
+function isNewerVersion(current: string, latest: string): boolean {
+  const c = current.split(".").map(Number);
+  const l = latest.split(".").map(Number);
+  for (let i = 0; i < Math.max(c.length, l.length); i++) {
+    const cv = c[i] ?? 0;
+    const lv = l[i] ?? 0;
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
+}
+
+server.registerTool("fh_version", {
+  title: "Version Check",
+  description: "Check the installed version and whether an update is available on npm",
+  inputSchema: z.object({}),
+}, safeTool(async () => {
+  let latest: string | null = null;
+  let updateAvailable = false;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch("https://registry.npmjs.org/function-health-mcp/latest", {
+      signal: controller.signal,
+      headers: { "User-Agent": `function-health-mcp/${VERSION}` },
+    });
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>;
+      clearTimeout(timeout);
+      if (typeof data.version === "string") {
+        latest = data.version;
+        updateAvailable = isNewerVersion(VERSION, latest);
+      }
+    } else {
+      clearTimeout(timeout);
+    }
+  } catch {
+    // Network error — degrade gracefully
+  }
+
+  return text({
+    current: VERSION,
+    latest: latest ?? "unknown",
+    updateAvailable,
+    ...(updateAvailable && latest ? {
+      updateInstructions: "If using npx, clear the cache: rm -rf ~/.npm/_npx/**/function-health-mcp. If installed globally: npm install -g function-health-mcp@latest",
+    } : {}),
+  });
 }));
 
 // ── Helpers ──

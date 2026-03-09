@@ -2,30 +2,30 @@
 name: fh-lab-results
 description: Query Function Health lab results, check for new data, compare visits, and deep-dive on biomarkers. Use when the user asks about labs, bloodwork, biomarkers, or health markers.
 argument-hint: "[summary | check | sync | biomarker <name> | changes | out-of-range | category <name>]"
-allowed-tools: mcp__function-health__function_health_login, mcp__function-health__function_health_status, mcp__function-health__function_health_results, mcp__function-health__function_health_biomarker, mcp__function-health__function_health_summary, mcp__function-health__function_health_categories, mcp__function-health__function_health_changes, mcp__function-health__function_health_sync, mcp__function-health__function_health_check, mcp__function-health__function_health_recommendations, mcp__function-health__function_health_report
+allowed-tools: mcp__function-health__fh_login, mcp__function-health__fh_status, mcp__function-health__fh_results, mcp__function-health__fh_biomarker, mcp__function-health__fh_summary, mcp__function-health__fh_categories, mcp__function-health__fh_changes, mcp__function-health__fh_sync, mcp__function-health__fh_check, mcp__function-health__fh_recommendations, mcp__function-health__fh_report, mcp__function-health__fh_version
 ---
 
 # Lab Results Skill
 
-Query and analyze Function Health lab results. This skill wraps 11 MCP tools for a conversational lab results experience.
+Query and analyze Function Health lab results. This skill wraps 12 MCP tools for a conversational lab results experience.
 
 ## First-Time Setup (Onboarding)
 
-**Always start by calling `function_health_status` to check if the user is authenticated and has data.**
+**Always start by calling `fh_status` to check if the user is authenticated and has data.**
 
 If `authenticated` is false:
 1. Tell the user they need to connect their Function Health account
 2. Ask for their Function Health email and password
-3. Call `function_health_login` with their credentials
-4. On success, automatically run `function_health_sync` to pull their data
+3. Call `fh_login` with their credentials
+4. On success, automatically run `fh_sync` to pull their data
 5. Then proceed with the requested action (or show a summary)
 
 If `authenticated` is true but `hasData` is false:
-1. Run `function_health_sync` to pull data
+1. Run `fh_sync` to pull data
 2. Then proceed with the requested action
 
 If `tokenValid` is false (expired session):
-1. Ask the user to re-authenticate with `function_health_login`
+1. Ask the user to re-authenticate with `fh_login`
 
 ## When to use
 
@@ -56,7 +56,7 @@ Parse from $ARGUMENTS:
 
 ### Default: Health Summary
 
-1. Call `function_health_summary`
+1. Call `fh_summary`
 2. Present conversationally:
    - Total markers tested, how many in/out of range
    - Biological age vs chronological age (if available)
@@ -66,19 +66,19 @@ Parse from $ARGUMENTS:
 
 ### Check for New Results
 
-1. Call `function_health_check`
+1. Call `fh_check`
 2. Report pending/completed requisitions and last sync time
 3. If `newResultsAvailable` is true, ask if user wants to sync
 
 ### Sync
 
-1. Call `function_health_sync`
+1. Call `fh_sync`
 2. Report how many results were pulled and if there are new ones
 3. If new results found, automatically run a changes comparison
 
 ### Biomarker Deep Dive
 
-1. Call `function_health_biomarker` with the name
+1. Call `fh_biomarker` with the name
 2. Present:
    - Current value and whether it's in range
    - Optimal range
@@ -89,7 +89,7 @@ Parse from $ARGUMENTS:
 
 ### Compare Visits
 
-1. Call `function_health_changes`
+1. Call `fh_changes`
 2. Summarize by category:
    - Improved markers (moved into range)
    - Worsened markers (moved out of range)
@@ -99,14 +99,14 @@ Parse from $ARGUMENTS:
 
 ### Out-of-Range Review
 
-1. Call `function_health_results` with `status: "out_of_range"`
+1. Call `fh_results` with `status: "out_of_range"`
 2. Group by severity or category if many results
 3. For each, show name and value
 4. Offer to deep-dive on specific markers
 
 ### Category View
 
-1. Call `function_health_results` with the category name
+1. Call `fh_results` with the category name
 2. Show all markers in that category with values and status
 3. Highlight any out-of-range
 
@@ -123,11 +123,11 @@ Parse from $ARGUMENTS:
 This skill works with `/loop` for automatic checking:
 
 ```
-/loop 6h /lab-results check
+/loop 6h /fh-lab-results check
 ```
 
 When new results are detected:
-1. `function_health_check` returns `newResultsAvailable: true`
-2. Automatically run `function_health_sync`
-3. Run `function_health_changes` to compare with previous visit
+1. `fh_check` returns `newResultsAvailable: true`
+2. Automatically run `fh_sync`
+3. Run `fh_changes` to compare with previous visit
 4. Present the changes summary conversationally

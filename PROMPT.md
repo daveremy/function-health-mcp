@@ -74,33 +74,33 @@ function-health-mcp/
 
 ### Core Query Tools
 
-#### `function_health_results`
+#### `fh_results`
 Query lab results with filtering.
 - **Params**: `biomarker?` (name or partial match), `category?` (e.g., "heart", "thyroid"), `status?` ("in_range" | "out_of_range" | "all"), `visit?` ("latest" | "all" | visit number), `date?` (YYYY-MM-DD)
 - **Returns**: Matching results with values, ranges, status, trend vs previous
 
-#### `function_health_biomarker`
+#### `fh_biomarker`
 Deep dive on a specific biomarker.
 - **Params**: `name` (biomarker name, fuzzy match OK)
 - **Returns**: Current value, optimal range, history across all visits, trend direction, clinical context (why it matters, recommendations, foods, supplements)
 
-#### `function_health_summary`
+#### `fh_summary`
 High-level health summary.
 - **Params**: `visit?` ("latest" | visit number)
 - **Returns**: Total markers tested, in-range count, out-of-range count, biological age, BMI, top concerns, top improvements
 
-#### `function_health_categories`
+#### `fh_categories`
 List all biomarker categories with counts.
 - **Returns**: Category name, description, number of biomarkers, number out of range
 
 ### Change Detection Tools
 
-#### `function_health_changes`
+#### `fh_changes`
 Compare results between visits.
 - **Params**: `from_visit?` (defaults to previous), `to_visit?` (defaults to latest)
 - **Returns**: New biomarkers tested, improved (moved into range), worsened (moved out of range), significantly changed (>10% delta), unchanged
 
-#### `function_health_sync`
+#### `fh_sync`
 Pull latest data from Function Health API.
 - **Params**: `force?` (re-export even if recent data exists)
 - **Returns**: Whether new data was found, count of new results, last sync timestamp
@@ -109,18 +109,18 @@ Pull latest data from Function Health API.
   - If new results detected, store the new export with timestamp
   - Return a summary of what changed
 
-#### `function_health_check`
+#### `fh_check`
 Quick check for new results (lightweight — just checks requisition status).
 - **Returns**: Pending requisitions, last completed requisition date, whether new results are available since last sync
 
 ### Reference Tools
 
-#### `function_health_recommendations`
+#### `fh_recommendations`
 Get Function Health's recommendations.
 - **Params**: `category?` (filter by category)
 - **Returns**: Recommendations with associated biomarkers
 
-#### `function_health_report`
+#### `fh_report`
 Get the full clinician report for a visit.
 - **Params**: `visit?` ("latest" | visit number)
 - **Returns**: Clinician notes, interpretations
@@ -176,13 +176,13 @@ Store exported data locally for offline querying and change detection:
 This MCP is designed to be polled via Claude Code's `/loop` command:
 
 ```
-/loop 6h function_health_check
+/loop 6h fh_check
 ```
 
 When new results are detected:
-1. `function_health_check` returns `new_results_available: true`
-2. Claude runs `function_health_sync` to pull and store the new data
-3. Claude runs `function_health_changes` to summarize what changed
+1. `fh_check` returns `new_results_available: true`
+2. Claude runs `fh_sync` to pull and store the new data
+3. Claude runs `fh_changes` to summarize what changed
 4. Claude presents the summary conversationally: "Your new Function Health results are in! 98 of 105 markers in range. 3 improved since last visit (Vitamin D, TSH, LDL). 2 need attention (ferritin dropped, ApoB slightly elevated). Want to dig in?"
 
 ## Development Workflow
@@ -195,20 +195,20 @@ When new results are detected:
 5. Build local data store (`store.ts`) — save/load exports, versioned by date
 
 ### Phase 2: MCP Tools
-6. Implement `function_health_sync` — full export + store
-7. Implement `function_health_results` — query with filters
-8. Implement `function_health_biomarker` — deep dive single marker
-9. Implement `function_health_summary` — high-level overview
-10. Implement `function_health_categories` — category listing
+6. Implement `fh_sync` — full export + store
+7. Implement `fh_results` — query with filters
+8. Implement `fh_biomarker` — deep dive single marker
+9. Implement `fh_summary` — high-level overview
+10. Implement `fh_categories` — category listing
 
 ### Phase 3: Change Detection
 11. Implement `diff.ts` — compare two exports, classify changes
-12. Implement `function_health_changes` — expose diff via MCP
-13. Implement `function_health_check` — lightweight new-results check
+12. Implement `fh_changes` — expose diff via MCP
+13. Implement `fh_check` — lightweight new-results check
 
 ### Phase 4: CLI + Polish
 14. Build CLI with commander (mirror all MCP tools)
-15. Implement `function_health_recommendations` and `function_health_report`
+15. Implement `fh_recommendations` and `fh_report`
 16. Write README with setup instructions
 17. Test end-to-end with real data
 18. Publish to npm

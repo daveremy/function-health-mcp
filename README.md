@@ -4,7 +4,7 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 
 ## Features
 
-- **9 MCP tools** for querying lab results, biomarker deep dives, change detection, and more
+- **12 MCP tools** for querying lab results, biomarker deep dives, change detection, and more
 - **CLI** with matching commands for terminal use
 - **Offline-first** — query tools read from local storage, only sync/check hit the API
 - **Change detection** — compare visits to see what improved, worsened, or changed significantly
@@ -41,7 +41,7 @@ Claude will ask for your Function Health email and password, authenticate, sync 
 
 ### 3. Install the skill (optional)
 
-Copy the skill into your project for a guided `/lab-results` slash command:
+Copy the skill into your project for a guided `/fh-lab-results` slash command:
 
 ```bash
 cp -r node_modules/function-health-mcp/.claude/skills/lab-results your-project/.claude/skills/
@@ -67,17 +67,18 @@ Then use the CLI directly:
 
 | Tool | Description |
 |------|-------------|
-| `function_health_login` | Authenticate with Function Health (email + password) |
-| `function_health_status` | Check auth status, data availability, and sync history |
-| `function_health_results` | Query lab results with filters (biomarker, category, status, visit) |
-| `function_health_biomarker` | Deep dive on a biomarker: value, ranges, history, recommendations |
-| `function_health_summary` | Health overview: totals, biological age, BMI, out-of-range markers |
-| `function_health_categories` | List biomarker categories with counts |
-| `function_health_changes` | Compare two visits: improved, worsened, new, significantly changed |
-| `function_health_sync` | Pull latest data from Function Health API |
-| `function_health_check` | Lightweight check for new results (no full data fetch) |
-| `function_health_recommendations` | Health recommendations, optionally filtered by category |
-| `function_health_report` | Full clinician report for a visit |
+| `fh_login` | Authenticate with Function Health (email + password) |
+| `fh_status` | Check auth status, data availability, and sync history |
+| `fh_results` | Query lab results with filters (biomarker, category, status, visit) |
+| `fh_biomarker` | Deep dive on a biomarker: value, ranges, history, recommendations |
+| `fh_summary` | Health overview: totals, biological age, BMI, out-of-range markers |
+| `fh_categories` | List biomarker categories with counts |
+| `fh_changes` | Compare two visits: improved, worsened, new, significantly changed |
+| `fh_sync` | Pull latest data from Function Health API |
+| `fh_check` | Lightweight check for new results (no full data fetch) |
+| `fh_recommendations` | Health recommendations, optionally filtered by category |
+| `fh_report` | Full clinician report for a visit |
+| `fh_version` | Check installed version and whether an update is available |
 
 ## CLI Commands
 
@@ -99,7 +100,7 @@ function-health export [--markdown]    Full JSON export
 Use Claude Code's `/loop` command to check for new results automatically:
 
 ```
-/loop 6h /lab-results check
+/loop 6h /fh-lab-results check
 ```
 
 This checks every 6 hours. When new results are detected, it syncs and summarizes what changed.
@@ -127,6 +128,10 @@ All data is stored locally at `~/.function-health/`:
 - **Rate-limited**: API requests are serialized with 250ms spacing to respect Function Health's API.
 - **Atomic writes**: Exports use a temp-directory-then-rename pattern to prevent data corruption.
 - **Graceful degradation**: Optional API endpoints (recommendations, notes, biological age) don't block the export if they fail.
+
+## Migrating from v0.2.x
+
+In v0.3.0, all MCP tool names were shortened from `function_health_*` to `fh_*` and the skill was renamed from `lab-results` to `fh-lab-results`. If you have the skill copied into your project, re-copy it to get the updated tool references.
 
 ## Requirements
 
