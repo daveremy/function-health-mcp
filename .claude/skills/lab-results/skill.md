@@ -2,12 +2,30 @@
 name: lab-results
 description: Query Function Health lab results, check for new data, compare visits, and deep-dive on biomarkers. Use when the user asks about labs, bloodwork, biomarkers, or health markers.
 argument-hint: "[summary | check | sync | biomarker <name> | changes | out-of-range | category <name>]"
-allowed-tools: mcp__function-health__function_health_results, mcp__function-health__function_health_biomarker, mcp__function-health__function_health_summary, mcp__function-health__function_health_categories, mcp__function-health__function_health_changes, mcp__function-health__function_health_sync, mcp__function-health__function_health_check, mcp__function-health__function_health_recommendations, mcp__function-health__function_health_report
+allowed-tools: mcp__function-health__function_health_login, mcp__function-health__function_health_status, mcp__function-health__function_health_results, mcp__function-health__function_health_biomarker, mcp__function-health__function_health_summary, mcp__function-health__function_health_categories, mcp__function-health__function_health_changes, mcp__function-health__function_health_sync, mcp__function-health__function_health_check, mcp__function-health__function_health_recommendations, mcp__function-health__function_health_report
 ---
 
 # Lab Results Skill
 
-Query and analyze Function Health lab results. This skill wraps 9 MCP tools for a conversational lab results experience.
+Query and analyze Function Health lab results. This skill wraps 11 MCP tools for a conversational lab results experience.
+
+## First-Time Setup (Onboarding)
+
+**Always start by calling `function_health_status` to check if the user is authenticated and has data.**
+
+If `authenticated` is false:
+1. Tell the user they need to connect their Function Health account
+2. Ask for their Function Health email and password
+3. Call `function_health_login` with their credentials
+4. On success, automatically run `function_health_sync` to pull their data
+5. Then proceed with the requested action (or show a summary)
+
+If `authenticated` is true but `hasData` is false:
+1. Run `function_health_sync` to pull data
+2. Then proceed with the requested action
+
+If `tokenValid` is false (expired session):
+1. Ask the user to re-authenticate with `function_health_login`
 
 ## When to use
 

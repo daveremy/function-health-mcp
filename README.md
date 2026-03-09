@@ -13,31 +13,7 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 
 ## Quick Start
 
-### 1. Install
-
-```bash
-git clone https://github.com/daveremy/function-health-mcp.git
-cd function-health-mcp
-npm install && npm run build
-```
-
-### 2. Authenticate
-
-```bash
-./dist/cli.js login
-```
-
-Enter your Function Health email and password. Credentials are stored locally at `~/.function-health/credentials.json`.
-
-### 3. Sync your data
-
-```bash
-./dist/cli.js sync
-```
-
-This pulls all your lab results, biomarkers, categories, recommendations, and reports from Function Health and stores them locally.
-
-### 4. Use with Claude Code
+### 1. Add to Claude Code
 
 Add to your project's `.mcp.json`:
 
@@ -46,32 +22,53 @@ Add to your project's `.mcp.json`:
   "mcpServers": {
     "function-health": {
       "type": "stdio",
-      "command": "node",
-      "args": ["/path/to/function-health-mcp/dist/mcp.js"]
+      "command": "npx",
+      "args": ["-y", "function-health-mcp"]
     }
   }
 }
 ```
 
-Then use the tools in Claude Code:
+### 2. Start using it
 
-> "Show me my out-of-range biomarkers"
+Just ask Claude about your lab results. On first use, Claude will walk you through authentication — no CLI needed:
+
+> "Show me my lab results"
 > "Deep dive on my Vitamin D levels"
 > "What changed between my last two visits?"
-> "Sync my latest Function Health data"
 
-### 5. Install the skill (optional)
+Claude will ask for your Function Health email and password, authenticate, sync your data, and show your results — all conversationally.
+
+### 3. Install the skill (optional)
 
 Copy the skill into your project for a guided `/lab-results` slash command:
 
 ```bash
-cp -r /path/to/function-health-mcp/.claude/skills/lab-results your-project/.claude/skills/
+cp -r node_modules/function-health-mcp/.claude/skills/lab-results your-project/.claude/skills/
+```
+
+### Alternative: Install from source
+
+```bash
+git clone https://github.com/daveremy/function-health-mcp.git
+cd function-health-mcp
+npm install && npm run build
+```
+
+Then use the CLI directly:
+
+```bash
+./dist/cli.js login
+./dist/cli.js sync
+./dist/cli.js summary
 ```
 
 ## MCP Tools
 
 | Tool | Description |
 |------|-------------|
+| `function_health_login` | Authenticate with Function Health (email + password) |
+| `function_health_status` | Check auth status, data availability, and sync history |
 | `function_health_results` | Query lab results with filters (biomarker, category, status, visit) |
 | `function_health_biomarker` | Deep dive on a biomarker: value, ranges, history, recommendations |
 | `function_health_summary` | Health overview: totals, biological age, BMI, out-of-range markers |

@@ -116,7 +116,7 @@ export function isTokenExpired(tokens: AuthTokens): boolean {
 export async function getValidTokens(): Promise<AuthTokens> {
   const creds = await loadCredentials();
   if (!creds?.idToken || !creds?.refreshToken) {
-    throw new Error("Not authenticated. Run: function-health login");
+    throw new Error("Not authenticated. Use the function_health_login tool or run: function-health login");
   }
 
   const tokens: AuthTokens = {

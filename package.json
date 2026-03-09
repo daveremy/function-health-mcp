@@ -10,11 +10,12 @@
     "url": "https://github.com/daveremy/function-health-mcp"
   },
   "bin": {
-    "function-health": "./dist/cli.js",
-    "function-health-mcp": "./dist/mcp.js"
+    "function-health": "dist/cli.js",
+    "function-health-mcp": "dist/mcp.js"
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude/skills"
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js dist/mcp.js",

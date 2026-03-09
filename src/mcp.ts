@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
+import { login, loadCredentials, getValidTokens } from "./auth.js";
 import { loadLatest, loadExport, loadExportResults, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
@@ -33,6 +34,56 @@ function safeTool<T>(fn: (args: T) => Promise<ToolResult>): (args: T) => Promise
     }
   };
 }
+
+// ── Auth Tools ──
+
+server.registerTool("function_health_login", {
+  title: "Login",
+  description: "Authenticate with Function Health. Required before syncing data. Takes email and password.",
+  inputSchema: z.object({
+    email: z.string().describe("Function Health account email"),
+    password: z.string().describe("Function Health account password"),
+  }),
+}, safeTool(async ({ email, password }) => {
+  const tokens = await login(email, password);
+  return text({
+    authenticated: true,
+    email: tokens.email,
+    message: "Login successful. You can now run function_health_sync to pull your data.",
+  });
+}));
+
+server.registerTool("function_health_status", {
+  title: "Auth & Data Status",
+  description: "Check authentication status, data availability, and sync history. Use this to determine if the user needs to login or sync.",
+  inputSchema: z.object({}),
+}, safeTool(async () => {
+  const creds = await loadCredentials();
+  const authenticated = !!(creds?.idToken && creds?.refreshToken);
+
+  let tokenValid = false;
+  if (authenticated) {
+    try {
+      await getValidTokens();
+      tokenValid = true;
+    } catch {
+      // Token expired and refresh failed
+    }
+  }
+
+  const syncLog = await getSyncLog();
+  const data = await loadLatest();
+
+  return text({
+    authenticated,
+    tokenValid,
+    email: creds?.email ?? null,
+    lastSync: syncLog.lastSync || null,
+    exportCount: syncLog.exports.length,
+    hasData: !!data,
+    resultCount: data?.results.length ?? 0,
+  });
+}));
 
 // ── Core Query Tools ──
 
