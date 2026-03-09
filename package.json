@@ -1,10 +1,18 @@
 {
   "name": "function-health-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Function Health MCP server and CLI — query lab results, detect changes, track biomarkers",
   "type": "module",
   "license": "MIT",
-  "keywords": ["function-health", "mcp", "model-context-protocol", "health", "biomarkers", "lab-results", "cli"],
+  "keywords": [
+    "function-health",
+    "mcp",
+    "model-context-protocol",
+    "health",
+    "biomarkers",
+    "lab-results",
+    "cli"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/daveremy/function-health-mcp"

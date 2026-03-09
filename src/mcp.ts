@@ -255,7 +255,7 @@ server.registerTool("function_health_changes", {
 
 server.registerTool("function_health_sync", {
   title: "Sync Data",
-  description: "Pull latest data from Function Health API and store locally. Detects new results.",
+  description: "Pull latest data from Function Health API and store locally. Detects new results. First sync takes 30-60 seconds — warn the user to expect a wait.",
   inputSchema: z.object({
     force: z.boolean().optional().describe("Re-export even if recent data exists"),
   }),
@@ -278,8 +278,10 @@ server.registerTool("function_health_sync", {
     ? syncLog.exports[syncLog.exports.length - 1].resultCount
     : 0;
 
+  server.server.sendLoggingMessage({ level: "info", data: "Syncing — fetching data from Function Health API..." });
   const client = await FunctionHealthClient.create();
   const data = await client.exportAll();
+  server.server.sendLoggingMessage({ level: "info", data: `Fetched ${data.results.length} results, ${data.biomarkers.length} biomarkers. Saving...` });
   const exportDate = await saveExport(data);
 
   const newResults = data.results.length - previousResultCount;
