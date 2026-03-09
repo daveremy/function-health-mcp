@@ -46,12 +46,15 @@ node dist/cli.js       # Run CLI
 
 ## MCP Tools
 
-- `function_health_results` - Query results with filters
-- `function_health_biomarker` - Deep dive on one biomarker
-- `function_health_summary` - High-level health overview
-- `function_health_categories` - Category listing
-- `function_health_changes` - Compare visits
-- `function_health_sync` - Pull latest data
-- `function_health_check` - Quick new-results check
-- `function_health_recommendations` - Health recommendations
-- `function_health_report` - Clinician report
+- `fh_login` - Authenticate with Function Health
+- `fh_status` - Check auth/data status
+- `fh_results` - Query results with filters
+- `fh_biomarker` - Deep dive on one biomarker
+- `fh_summary` - High-level health overview
+- `fh_categories` - Category listing
+- `fh_changes` - Compare visits
+- `fh_sync` - Pull latest data
+- `fh_check` - Quick new-results check
+- `fh_recommendations` - Health recommendations
+- `fh_report` - Clinician report
+- `fh_version` - Check for updates

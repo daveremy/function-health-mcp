@@ -5,6 +5,7 @@ import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
+import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
 
 function validateDateOpt(date: string, label: string): void {
@@ -21,7 +22,7 @@ const program = new Command();
 program
   .name("function-health")
   .description("Function Health lab results CLI")
-  .version("0.1.0");
+  .version(VERSION);
 
 function requireData(data: ExportData | null): asserts data is ExportData {
   if (!data) {
