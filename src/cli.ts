@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { login, loadCredentials } from "./auth.js";
+import { login, loadCredentials, getValidTokens, clearCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
 import { loadLatest, loadExport, saveExport, saveMultiVisitExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
@@ -38,9 +38,25 @@ program
   .description("Authenticate with Function Health")
   .option("-e, --email <email>", "Email address")
   .option("-p, --password <password>", "Password")
+  .option("-f, --force", "Re-authenticate even if already logged in")
   .action(async (opts) => {
+    // Check if already authenticated
+    if (!opts.force) {
+      const creds = await loadCredentials();
+      if (creds?.idToken && creds?.refreshToken) {
+        try {
+          const tokens = await getValidTokens();
+          console.log(`Already logged in as ${tokens.email}`);
+          console.log("Use --force to re-authenticate.");
+          process.exit(0);
+        } catch {
+          console.log("Session expired. Re-authenticating...\n");
+        }
+      }
+    }
+
     if (!opts.email || !opts.password) {
-      console.log("\nFunction Health Login");
+      console.log("Function Health Login");
       console.log("─".repeat(30));
     }
     const email = opts.email ?? await prompt("Email: ");
@@ -53,6 +69,14 @@ program
       console.error("Login failed:", (err as Error).message);
       process.exit(1);
     }
+  });
+
+program
+  .command("logout")
+  .description("Remove stored credentials")
+  .action(async () => {
+    await clearCredentials();
+    console.log("Logged out. Credentials removed.");
   });
 
 program
