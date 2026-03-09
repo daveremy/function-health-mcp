@@ -203,37 +203,109 @@ export function filterResults(
   return filtered;
 }
 
-// ── Export partitioning ──
+// ── Export grouping by test round ──
 
-/** Partition export data by visit date (dateOfService). Each partition gets a copy of shared data. */
-export function partitionByVisitDate(data: ExportData): Map<string, ExportData> {
-  const groups = new Map<string, HealthResult[]>();
+/** Group export data by test round (requisitionId). Results sharing a requisitionId
+ *  are merged into a single round keyed by the earliest dateOfService.
+ *  Results with empty requisitionId are assigned to a round only if there is exactly
+ *  one round with results sharing the same dateOfService; otherwise isolated.
+ *  Returns an array of [dateKey, roundData] tuples (not a Map) to preserve rounds
+ *  that happen to share the same earliest date. */
+export function groupByRound(data: ExportData): Array<[string, ExportData]> {
+  // Step 1: Group results by requisitionId
+  const byReqId = new Map<string, HealthResult[]>();
+  const noReqId: HealthResult[] = [];
+
   for (const r of data.results) {
-    const date = (r.dateOfService || "").slice(0, 10);
+    if (r.requisitionId) {
+      const list = byReqId.get(r.requisitionId);
+      if (list) list.push(r);
+      else byReqId.set(r.requisitionId, [r]);
+    } else {
+      noReqId.push(r);
+    }
+  }
+
+  // Step 2: Build a map of dateOfService → requisitionIds that have results on that date
+  const dateToReqIds = new Map<string, Set<string>>();
+  for (const [reqId, results] of byReqId) {
+    for (const r of results) {
+      const date = getServiceDate(r);
+      if (!date) continue;
+      const set = dateToReqIds.get(date);
+      if (set) set.add(reqId);
+      else dateToReqIds.set(date, new Set([reqId]));
+    }
+  }
+
+  // Step 3: Assign orphan results (no requisitionId)
+  for (const r of noReqId) {
+    const date = getServiceDate(r);
     if (!date) continue;
-    const list = groups.get(date);
-    if (list) list.push(r);
-    else groups.set(date, [r]);
+    const reqIds = dateToReqIds.get(date);
+    if (reqIds && reqIds.size === 1) {
+      const reqId = reqIds.values().next().value!;
+      byReqId.get(reqId)!.push(r);
+    } else {
+      // Ambiguous or no match — isolate by date
+      const isoKey = `__no_req__${date}`;
+      const list = byReqId.get(isoKey);
+      if (list) list.push(r);
+      else byReqId.set(isoKey, [r]);
+    }
   }
 
-  if (groups.size <= 1) {
-    // Single visit or no results — return as-is keyed by the derived date
-    const date = groups.size === 1 ? [...groups.keys()][0] : deriveExportDate(data, new Date().toISOString().slice(0, 10));
-    const result = new Map<string, ExportData>();
-    result.set(date, data);
-    return result;
+  // Step 4: Build array of [dateKey, roundData] tuples
+  if (byReqId.size === 0) {
+    return [[deriveExportDate(data, today()), data]];
   }
 
-  const partitions = new Map<string, ExportData>();
-  for (const [date, results] of groups) {
+  const output: Array<[string, ExportData]> = [];
+  for (const [, results] of byReqId) {
+    const key = earliestDate(results);
     const resultNames = new Set(results.map(r => (getResultName(r) || "").toLowerCase()));
-    partitions.set(date, {
+    output.push([key, {
       ...data,
       results,
       biomarkerDetails: data.biomarkerDetails.filter(d => resultNames.has(d.name.toLowerCase())),
-    });
+    }]);
   }
-  return partitions;
+
+  return output;
+}
+
+/** Extract YYYY-MM-DD from a result's dateOfService */
+function getServiceDate(r: HealthResult): string {
+  return (r.dateOfService || "").slice(0, 10);
+}
+
+/** Get the earliest dateOfService from a list of results */
+function earliestDate(results: HealthResult[]): string {
+  let min = "";
+  for (const r of results) {
+    const date = getServiceDate(r);
+    if (date && (!min || date < min)) min = date;
+  }
+  return min || today();
+}
+
+/** Extract the requisitionId for a group of results (returns empty string if mixed/missing) */
+export function extractRequisitionId(results: HealthResult[]): string {
+  const ids = new Set<string>();
+  for (const r of results) {
+    if (r.requisitionId) ids.add(r.requisitionId);
+  }
+  return ids.size === 1 ? ids.values().next().value! : "";
+}
+
+/** Get unique visit dates from results, sorted ascending */
+export function extractVisitDates(results: HealthResult[]): string[] {
+  const dates = new Set<string>();
+  for (const r of results) {
+    const date = (r.dateOfService || "").slice(0, 10);
+    if (date) dates.add(date);
+  }
+  return [...dates].sort();
 }
 
 // ── Misc ──

@@ -1,8 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import type { ExportData, HealthResult, SyncLog } from "./types.js";
-import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE, partitionByVisitDate } from "./utils.js";
+import type { ExportData, HealthResult, RoundMeta, SyncLog } from "./types.js";
+import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE, groupByRound, extractRequisitionId, extractVisitDates, today } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
@@ -15,7 +15,7 @@ async function ensureDir(dir: string): Promise<void> {
 
 /** Save an export atomically — writes to a temp directory then renames */
 export async function saveExport(data: ExportData, date?: string): Promise<string> {
-  const exportDate = validateDate(date ?? deriveExportDate(data, new Date().toISOString().slice(0, 10)));
+  const exportDate = validateDate(date ?? deriveExportDate(data, today()));
   const exportDir = path.join(EXPORTS_DIR, exportDate);
   const tmpDir = `${exportDir}.tmp.${Date.now()}`;
   await ensureDir(tmpDir);
@@ -63,17 +63,178 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
   return exportDate;
 }
 
-/** Save a multi-visit export — partitions by visit date and saves each separately.
- *  Returns sorted list of saved dates. */
-export async function saveMultiVisitExport(data: ExportData): Promise<string[]> {
-  const partitions = partitionByVisitDate(data);
-  const dates = [...partitions.keys()].sort();
+/** Save an export grouped by test round (requisitionId).
+ *  Merges results sharing a requisitionId into a single directory keyed by earliest visit date.
+ *  Writes round-meta.json alongside export files. Returns sorted list of saved round dates. */
+export async function saveRoundExport(data: ExportData): Promise<string[]> {
+  const rounds = groupByRound(data);
+  const usedDates = new Set<string>();
+  const dates: string[] = [];
 
-  for (const date of dates) {
-    await saveExport(partitions.get(date)!, date);
+  for (const [dateKey, roundData] of rounds) {
+    // Resolve date collision: if two rounds share the same earliest date,
+    // check round-meta.json on disk. If a different requisitionId owns that dir,
+    // find the next available date by incrementing the day.
+    let resolvedDate = dateKey;
+    if (usedDates.has(resolvedDate)) {
+      resolvedDate = nextAvailableDate(resolvedDate, usedDates);
+    }
+    usedDates.add(resolvedDate);
+
+    await saveExport(roundData, resolvedDate);
+
+    const meta = buildRoundMeta(roundData.results);
+    const metaPath = path.join(EXPORTS_DIR, resolvedDate, "round-meta.json");
+    await writeSecure(metaPath, JSON.stringify(meta, null, 2));
+
+    dates.push(resolvedDate);
   }
 
-  return dates;
+  const sorted = dates.sort();
+
+  // Point latest.json to the most recent round
+  if (sorted.length > 0) {
+    await writeSecure(LATEST_PATH, JSON.stringify({ date: sorted[sorted.length - 1] }));
+  }
+
+  return sorted;
+}
+
+/** Find the next available date by incrementing the day until no collision */
+function nextAvailableDate(date: string, used: Set<string>): string {
+  const d = new Date(date + "T00:00:00Z");
+  do {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const candidate = d.toISOString().slice(0, 10);
+    if (!used.has(candidate)) return candidate;
+  } while (true);
+}
+
+/** Build a RoundMeta from a set of results */
+function buildRoundMeta(results: HealthResult[]): RoundMeta {
+  return {
+    requisitionId: extractRequisitionId(results),
+    visitDates: extractVisitDates(results),
+    resultCount: results.length,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+/** Load round metadata for a given export date */
+export async function loadRoundMeta(date: string): Promise<RoundMeta | null> {
+  try {
+    const metaPath = path.join(EXPORTS_DIR, date, "round-meta.json");
+    const raw = await fs.readFile(metaPath, "utf-8");
+    return JSON.parse(raw) as RoundMeta;
+  } catch {
+    return null;
+  }
+}
+
+/** Migrate old per-visit exports to round-based exports.
+ *  Idempotent: detects un-migrated directories (no round-meta.json),
+ *  groups by requisitionId, merges into earliest-date directories. */
+export async function migrateToRounds(): Promise<void> {
+  const allDates = await listExports();
+  if (allDates.length === 0) return;
+
+  // Parallel load: results + round-meta for all directories
+  const dirData = await Promise.all(allDates.map(async (date) => {
+    const [meta, results] = await Promise.all([loadRoundMeta(date), loadExportResults(date)]);
+    return { date, results, meta, fullData: null as ExportData | null };
+  }));
+
+  // Fast path: if all directories already have round-meta, nothing to migrate
+  if (dirData.every(d => d.meta !== null)) return;
+
+  // Group directories by requisitionId
+  const groups = new Map<string, typeof dirData>();
+  for (const dir of dirData) {
+    const reqId = dir.meta?.requisitionId || extractRequisitionId(dir.results);
+    if (!reqId) {
+      if (!dir.meta) {
+        const meta = buildRoundMeta(dir.results);
+        const metaPath = path.join(EXPORTS_DIR, dir.date, "round-meta.json");
+        await writeSecure(metaPath, JSON.stringify(meta, null, 2));
+      }
+      continue;
+    }
+    const list = groups.get(reqId);
+    if (list) list.push(dir);
+    else groups.set(reqId, [dir]);
+  }
+
+  let latestChanged = false;
+  const latestPointer = await readLatestPointer();
+
+  for (const [reqId, dirs] of groups) {
+    if (dirs.length === 1 && dirs[0].meta) continue;
+
+    // Load full data for directories that need merging (parallel)
+    await Promise.all(dirs.map(async (dir) => {
+      dir.fullData = await loadExport(dir.date);
+    }));
+
+    const targetDate = dirs.map(d => d.date).sort()[0];
+
+    // Merge results (deduplicate by id)
+    const resultMap = new Map<string, HealthResult>();
+    for (const dir of dirs) {
+      for (const r of dir.results) {
+        resultMap.set(r.id, r);
+      }
+    }
+
+    // Merge biomarkerDetails (deduplicate by name)
+    const detailMap = new Map<string, unknown>();
+    for (const dir of dirs) {
+      if (dir.fullData) {
+        for (const d of dir.fullData.biomarkerDetails) {
+          detailMap.set(d.name.toLowerCase(), d);
+        }
+      }
+    }
+
+    const richest = dirs.reduce((a, b) => (a.results.length >= b.results.length ? a : b));
+    if (!richest.fullData) {
+      console.error(`Warning: could not load export for ${richest.date}, skipping migration of requisition ${reqId}`);
+      continue;
+    }
+    const mergedData: ExportData = {
+      ...richest.fullData,
+      results: [...resultMap.values()],
+      biomarkerDetails: [...detailMap.values()] as ExportData["biomarkerDetails"],
+    };
+
+    await saveExport(mergedData, targetDate);
+
+    const meta: RoundMeta = { ...buildRoundMeta(mergedData.results), requisitionId: reqId };
+    const metaPath = path.join(EXPORTS_DIR, targetDate, "round-meta.json");
+    await writeSecure(metaPath, JSON.stringify(meta, null, 2));
+
+    for (const dir of dirs) {
+      if (dir.date !== targetDate) {
+        const dirPath = path.join(EXPORTS_DIR, dir.date);
+        const backupPath = `${dirPath}.migrated.${Date.now()}`;
+        try {
+          await fs.rename(dirPath, backupPath);
+          await fs.rm(backupPath, { recursive: true, force: true });
+        } catch {
+          // Best-effort cleanup — directory may already be gone
+        }
+        if (latestPointer === dir.date) latestChanged = true;
+      }
+    }
+  }
+
+  if (latestChanged) {
+    const remaining = await listExports();
+    if (remaining.length > 0) {
+      await writeSecure(LATEST_PATH, JSON.stringify({ date: remaining[remaining.length - 1] }));
+    }
+  }
+
+  await rebuildSyncLog();
 }
 
 /** Update the requisition count in the sync log (separate from per-export tracking) */
@@ -86,16 +247,14 @@ export async function updateRequisitionCount(count: number): Promise<void> {
 
 /** Load the most recent export (reads pointer file, then loads the export) */
 export async function loadLatest(): Promise<ExportData | null> {
+  const pointer = await readLatestPointer();
+  if (pointer) return loadExport(pointer);
+
+  // Legacy fallback: latest.json might contain full export data
   try {
     const raw = await fs.readFile(LATEST_PATH, "utf-8");
-    const pointer = JSON.parse(raw);
-
-    // Support both old format (full data) and new format (pointer with date)
-    if (typeof pointer?.date === "string") {
-      return await loadExport(pointer.date);
-    }
-    // Legacy: latest.json contained full export data
-    if (pointer?.results) return pointer as ExportData;
+    const data = JSON.parse(raw);
+    if (data?.results) return data as ExportData;
     return null;
   } catch (err: unknown) {
     if (isFileNotFound(err)) return null;
@@ -192,6 +351,36 @@ async function updateSyncLog(date: string, resultCount: number): Promise<void> {
     log.exports.push({ date, resultCount, timestamp: log.lastSync });
   }
 
+  await ensureDir(DATA_DIR);
+  await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
+}
+
+async function readLatestPointer(): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(LATEST_PATH, "utf-8");
+    const pointer = JSON.parse(raw);
+    return typeof pointer?.date === "string" ? pointer.date : null;
+  } catch {
+    return null;
+  }
+}
+
+async function rebuildSyncLog(): Promise<void> {
+  const dates = await listExports();
+  const log = await getSyncLog();
+  const now = new Date().toISOString();
+
+  const entries = await Promise.all(dates.map(async (date) => {
+    const meta = await loadRoundMeta(date);
+    return {
+      date,
+      requisitionId: meta?.requisitionId,
+      resultCount: meta?.resultCount ?? 0,
+      timestamp: meta?.lastUpdated ?? log.lastSync ?? now,
+    };
+  }));
+
+  log.exports = entries;
   await ensureDir(DATA_DIR);
   await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
 }

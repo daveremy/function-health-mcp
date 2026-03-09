@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
 import { loadCredentials, getValidTokens } from "./auth.js";
-import { loadLatest, loadExport, loadExportResults, saveMultiVisitExport, listExports, getSyncLog, updateRequisitionCount } from "./store.js";
+import { loadLatest, loadExport, loadExportResults, saveRoundExport, listExports, getSyncLog, updateRequisitionCount, loadRoundMeta, migrateToRounds } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
@@ -76,11 +76,23 @@ server.registerTool("fh_status", {
   const auth = await checkAuth();
   const syncLog = await getSyncLog();
   const data = await loadLatest();
+  const exports = await listExports();
+
+  // Load round info for each export (parallel)
+  const rounds = await Promise.all(exports.map(async (date) => {
+    const meta = await loadRoundMeta(date);
+    return {
+      date,
+      visitDates: meta?.visitDates ?? [date],
+      resultCount: meta?.resultCount ?? 0,
+    };
+  }));
 
   return text({
     ...auth,
     lastSync: syncLog.lastSync || null,
-    exportCount: syncLog.exports.length,
+    roundCount: exports.length,
+    rounds,
     hasData: !!data,
     resultCount: data?.results.length ?? 0,
   });
@@ -90,12 +102,12 @@ server.registerTool("fh_status", {
 
 server.registerTool("fh_results", {
   title: "Lab Results",
-  description: "Query lab results with filtering by biomarker name, category, status (in_range/out_of_range), or visit",
+  description: "Query lab results with filtering by biomarker name, category, status (in_range/out_of_range), or test round",
   inputSchema: z.object({
     biomarker: z.string().optional().describe("Biomarker name or partial match (fuzzy)"),
     category: z.string().optional().describe("Category name (e.g. 'heart', 'thyroid')"),
     status: z.enum(["in_range", "out_of_range", "all"]).optional().describe("Filter by range status"),
-    visit: z.string().optional().describe("'latest' (default) or a visit date (YYYY-MM-DD)"),
+    visit: z.string().optional().describe("'latest' (default) or a test round date (YYYY-MM-DD)"),
   }),
 }, safeTool(async ({ biomarker, category, status, visit }) => {
   const data = await resolveExport(visit);
@@ -177,7 +189,7 @@ server.registerTool("fh_summary", {
   title: "Health Summary",
   description: "High-level health summary: total markers, in/out of range counts, biological age, BMI, top concerns",
   inputSchema: z.object({
-    visit: z.string().optional().describe("'latest' (default) or a visit date (YYYY-MM-DD)"),
+    visit: z.string().optional().describe("'latest' (default) or a test round date (YYYY-MM-DD)"),
   }),
 }, safeTool(async ({ visit }) => {
   const data = await resolveExport(visit);
@@ -231,15 +243,15 @@ server.registerTool("fh_categories", {
 // ── Change Detection Tools ──
 
 server.registerTool("fh_changes", {
-  title: "Compare Visits",
-  description: "Compare results between visits to see what improved, worsened, or changed significantly",
+  title: "Compare Test Rounds",
+  description: "Compare results between test rounds to see what improved, worsened, or changed significantly. Each test round may include multiple lab visits.",
   inputSchema: z.object({
-    from_visit: z.string().optional().describe("From visit date YYYY-MM-DD (defaults to previous)"),
-    to_visit: z.string().optional().describe("To visit date YYYY-MM-DD (defaults to latest)"),
+    from_visit: z.string().optional().describe("From test round date YYYY-MM-DD (defaults to previous)"),
+    to_visit: z.string().optional().describe("To test round date YYYY-MM-DD (defaults to latest)"),
   }),
 }, safeTool(async ({ from_visit, to_visit }) => {
   const exports = await listExports();
-  if (exports.length < 2) return text({ error: "Need at least 2 exports to compare. Run fh_sync." });
+  if (exports.length < 2) return text({ error: "Need at least 2 test rounds to compare. Run fh_sync." });
 
   const fromDate = from_visit ?? exports[exports.length - 2];
   const toDate = to_visit ?? exports[exports.length - 1];
@@ -251,7 +263,7 @@ server.registerTool("fh_changes", {
 
   if (!fromData || !toData) return text({ error: "Could not load exports for comparison." });
 
-  return text(diffExports(fromData, toData));
+  return text(diffExports(fromData, toData, fromDate, toDate));
 }));
 
 server.registerTool("fh_sync", {
@@ -277,19 +289,22 @@ server.registerTool("fh_sync", {
 
   const previousResultCount = syncLog.exports.reduce((sum, e) => sum + e.resultCount, 0);
 
+  // Migrate old per-visit exports to round-based (idempotent)
+  await migrateToRounds();
+
   server.server.sendLoggingMessage({ level: "info", data: "Syncing — fetching data from Function Health API..." });
   const client = await FunctionHealthClient.create();
   const data = await client.exportAll();
   const requisitionCount = data.requisitions?.length ?? 0;
   server.server.sendLoggingMessage({ level: "info", data: `Fetched ${data.results.length} results, ${data.biomarkers.length} biomarkers. Saving...` });
-  const savedDates = await saveMultiVisitExport(data);
+  const savedDates = await saveRoundExport(data);
   await updateRequisitionCount(requisitionCount);
 
   const newResults = data.results.length - previousResultCount;
 
   return text({
     synced: true,
-    exportDates: savedDates,
+    roundDates: savedDates,
     resultCount: data.results.length,
     newResults: Math.max(0, newResults),
     lastSync: new Date().toISOString(),
@@ -324,6 +339,7 @@ server.registerTool("fh_check", {
     pendingSchedules: schedules.length,
     lastSync: lastSync || "never",
     newResultsAvailable,
+    note: "This checks for new test rounds only. To detect new batches within a round, run fh_sync.",
   });
 }));
 
@@ -352,9 +368,9 @@ server.registerTool("fh_recommendations", {
 
 server.registerTool("fh_report", {
   title: "Clinician Report",
-  description: "Get the full clinician report for a visit",
+  description: "Get the full clinician report for a test round",
   inputSchema: z.object({
-    visit: z.string().optional().describe("'latest' (default) or a visit date (YYYY-MM-DD)"),
+    visit: z.string().optional().describe("'latest' (default) or a test round date (YYYY-MM-DD)"),
   }),
 }, safeTool(async ({ visit }) => {
   const data = await resolveExport(visit);

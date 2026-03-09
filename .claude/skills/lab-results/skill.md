@@ -45,7 +45,7 @@ Parse from $ARGUMENTS:
 | `check` | Lightweight check for new results |
 | `sync` | Pull latest data from Function Health |
 | `biomarker <name>` | Deep dive on a specific biomarker |
-| `changes` | Compare last two visits |
+| `changes` | Compare last two test rounds |
 | `out-of-range` | Show all out-of-range markers |
 | `category <name>` | Show results for a category (e.g., "heart", "thyroid") |
 | `recommendations` | Show health recommendations |
@@ -86,15 +86,16 @@ Parse from $ARGUMENTS:
    - Recommendations (foods, supplements, lifestyle)
 3. Keep it conversational — lead with the number, then context
 
-### Compare Visits
+### Compare Test Rounds
 
 1. Call `fh_changes`
-2. Summarize by category:
+2. Each test round includes all lab visits (1-3) over several weeks. Comparisons are between complete rounds, not individual visit dates.
+3. Summarize by category:
    - Improved markers (moved into range)
    - Worsened markers (moved out of range)
    - Significantly changed (>10% delta)
    - New markers (first time tested)
-3. Lead with wins, then concerns
+4. Lead with wins, then concerns
 
 ### Out-of-Range Review
 

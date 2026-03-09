@@ -175,6 +175,48 @@ describe("diffExports", () => {
     assert.equal(diff.summary.disappearedCount, 0);
   });
 
+  it("uses explicit labels when provided", () => {
+    const from = makeExport({
+      results: [makeResult({ biomarkerName: "A", dateOfService: "2026-01-29" })],
+      biomarkers: [makeBiomarker("A")],
+    });
+    const to = makeExport({
+      results: [makeResult({ biomarkerName: "A", dateOfService: "2026-07-20" })],
+      biomarkers: [makeBiomarker("A")],
+    });
+
+    // Labels override derived dates (round key = earliest date, not latest)
+    const diff = diffExports(from, to, "2026-01-20", "2026-07-15");
+    assert.equal(diff.fromDate, "2026-01-20");
+    assert.equal(diff.toDate, "2026-07-15");
+  });
+
+  it("compares two complete rounds correctly", () => {
+    const from = makeExport({
+      results: [
+        makeResult({ biomarkerName: "Vitamin D", displayResult: "25", inRange: false, dateOfService: "2026-01-20", requisitionId: "req1" }),
+        makeResult({ biomarkerName: "Iron", displayResult: "80", inRange: true, dateOfService: "2026-01-29", requisitionId: "req1" }),
+        makeResult({ biomarkerName: "B12", displayResult: "500", inRange: true, dateOfService: "2026-01-29", requisitionId: "req1" }),
+      ],
+      biomarkers: [makeBiomarker("Vitamin D"), makeBiomarker("Iron"), makeBiomarker("B12")],
+    });
+    const to = makeExport({
+      results: [
+        makeResult({ biomarkerName: "Vitamin D", displayResult: "45", inRange: true, dateOfService: "2026-07-15", requisitionId: "req2" }),
+        makeResult({ biomarkerName: "Iron", displayResult: "85", inRange: true, dateOfService: "2026-07-20", requisitionId: "req2" }),
+        makeResult({ biomarkerName: "Zinc", displayResult: "90", inRange: true, dateOfService: "2026-07-20", requisitionId: "req2" }),
+      ],
+      biomarkers: [makeBiomarker("Vitamin D"), makeBiomarker("Iron"), makeBiomarker("Zinc")],
+    });
+
+    const diff = diffExports(from, to, "2026-01-20", "2026-07-15");
+    assert.equal(diff.fromDate, "2026-01-20");
+    assert.equal(diff.toDate, "2026-07-15");
+    assert.equal(diff.summary.improvedCount, 1); // Vitamin D
+    assert.equal(diff.summary.newCount, 1); // Zinc
+    assert.equal(diff.summary.disappearedCount, 1); // B12
+  });
+
   it("handles values like '<0.2' as non-numeric", () => {
     const from = makeExport({
       results: [makeResult({ biomarkerName: "hsCRP", displayResult: "<0.2", calculatedResult: "<0.2", inRange: true, dateOfService: "2026-01-20" })],

@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-03-09
+
+### Added
+- **Test round model** — results are now grouped by `requisitionId` instead of `dateOfService`, correctly merging multiple lab visits within the same test round (#10 follow-up)
+- `round-meta.json` stored alongside each export with requisitionId, visit dates, and result count
+- Auto-migration from v0.3.x per-visit exports to round-based exports (idempotent, runs on first sync)
+- Round info in `fh_status` — shows visit dates and result count per round
+- Migration tests and expanded round-grouping test suite
+
+### Changed
+- `fh_summary` now shows all results across a test round (e.g. 113 instead of 68)
+- `fh_changes` compares test rounds, not individual visit dates — uses round labels for accurate date display
+- `fh_check` clarifies that it detects new test rounds only; batch detection requires `fh_sync`
+- `fh_sync` runs migration before syncing, then saves round-based exports
+- Tool descriptions updated to reference "test round" semantics
+- `partitionByVisitDate()` replaced with `groupByRound()` in utils
+- `saveMultiVisitExport()` replaced with `saveRoundExport()` in store
+
+### Fixed
+- `fh_changes` no longer compares two visits from the same round (zero overlap, nonsensical diff)
+- `fh_summary` no longer shows partial results (one visit instead of full round)
+- `diffExports` accepts optional labels so round keys (earliest date) display correctly instead of derived latest date
+
 ## [0.3.0] - 2026-03-09
 
 ### Added

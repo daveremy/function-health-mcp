@@ -1,10 +1,12 @@
 import type { ExportData, BiomarkerChange, DiffResult } from "./types.js";
 import { getResultName, getResultValue, deriveExportDate, buildCategoryMap, byDateDesc } from "./utils.js";
 
-/** Compare two exports and classify changes */
-export function diffExports(from: ExportData, to: ExportData): DiffResult {
-  const fromDate = deriveExportDate(from);
-  const toDate = deriveExportDate(to);
+/** Compare two exports and classify changes.
+ *  Optional labels override the derived dates (useful when the storage key
+ *  differs from the latest dateOfService, e.g. round key = earliest date). */
+export function diffExports(from: ExportData, to: ExportData, fromLabel?: string, toLabel?: string): DiffResult {
+  const fromDate = fromLabel ?? deriveExportDate(from);
+  const toDate = toLabel ?? deriveExportDate(to);
 
   const fromMap = buildResultMap(from);
   const toMap = buildResultMap(to);

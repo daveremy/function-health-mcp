@@ -7,8 +7,9 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 - **12 MCP tools** for querying lab results, biomarker deep dives, change detection, and more
 - **CLI** with matching commands for terminal use
 - **Offline-first** — query tools read from local storage, only sync/check hit the API
-- **Change detection** — compare visits to see what improved, worsened, or changed significantly
-- **Biomarker history** — track any biomarker across all your visits
+- **Test round model** — automatically groups multi-visit lab results by requisitionId into complete test rounds
+- **Change detection** — compare test rounds to see what improved, worsened, or changed significantly
+- **Biomarker history** — track any biomarker across all your test rounds
 - **Secure** — credentials stored with owner-only permissions (0o600 files, 0o700 directories)
 
 ## Quick Start
@@ -79,7 +80,7 @@ Then use the CLI directly:
 | `fh_biomarker` | Deep dive on a biomarker: value, ranges, history, recommendations |
 | `fh_summary` | Health overview: totals, biological age, BMI, out-of-range markers |
 | `fh_categories` | List biomarker categories with counts |
-| `fh_changes` | Compare two visits: improved, worsened, new, significantly changed |
+| `fh_changes` | Compare two test rounds: improved, worsened, new, significantly changed |
 | `fh_sync` | Pull latest data from Function Health API |
 | `fh_check` | Lightweight check for new results (no full data fetch) |
 | `fh_recommendations` | Health recommendations, optionally filtered by category |
@@ -97,7 +98,7 @@ function-health results [options]      Query lab results
 function-health biomarker <name>       Deep dive on a biomarker
 function-health summary                Health summary
 function-health categories             List categories
-function-health changes [--from] [--to]  Compare visits
+function-health changes [--from] [--to]  Compare test rounds
 function-health export [--markdown]    Full JSON export
 ```
 
@@ -121,12 +122,17 @@ All data is stored locally at `~/.function-health/`:
   latest.json          Pointer to most recent export
   sync-log.json        Sync history
   exports/
-    2026-02-26/        Versioned exports (one directory per visit)
-      results.json
+    2026-01-20/        One directory per test round (keyed by earliest visit date)
+      results.json     All results across all visits in this round
+      round-meta.json  Round metadata (requisitionId, visitDates, resultCount)
       biomarkers.json
       categories.json
       ...
 ```
+
+### Test Round Model
+
+Function Health runs comprehensive lab panels requiring 1-3 lab visits over several weeks. All visits within one test round share the same `requisitionId`. Results are grouped by round so that `fh_summary` shows all 100+ markers and `fh_changes` compares complete rounds, not individual visits.
 
 ## Architecture
 
@@ -135,9 +141,17 @@ All data is stored locally at `~/.function-health/`:
 - **Atomic writes**: Exports use a temp-directory-then-rename pattern to prevent data corruption.
 - **Graceful degradation**: Optional API endpoints (recommendations, notes, biological age) don't block the export if they fail.
 
+## Migrating from v0.3.x
+
+In v0.4.0, exports are grouped by test round (requisitionId) instead of individual visit dates. On first sync, old per-visit exports are automatically migrated — multiple visit directories sharing a requisitionId are merged into a single round directory. No manual action needed.
+
 ## Migrating from v0.2.x
 
 In v0.3.0, all MCP tool names were shortened from `function_health_*` to `fh_*` and the skill was renamed from `lab-results` to `fh-lab-results`. If you have the skill copied into your project, re-copy it to get the updated tool references.
+
+## API Documentation
+
+This project uses a reverse-engineered, undocumented API. See [docs/api-reference.md](docs/api-reference.md) for full endpoint documentation, data model, authentication flow, and known quirks.
 
 ## Requirements
 

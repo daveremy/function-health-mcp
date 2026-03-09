@@ -175,12 +175,21 @@ export class ApiError extends Error {
   }
 }
 
+// Round metadata (stored as round-meta.json in each export directory)
+export interface RoundMeta {
+  requisitionId: string;
+  visitDates: string[];
+  resultCount: number;
+  lastUpdated: string;
+}
+
 // Sync metadata
 export interface SyncLog {
   lastSync: string;
   requisitionCount?: number;
   exports: Array<{
     date: string;
+    requisitionId?: string;
     resultCount: number;
     timestamp: string;
   }>;

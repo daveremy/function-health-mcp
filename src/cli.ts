@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { login, loadCredentials, getValidTokens, clearCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
-import { loadLatest, loadExport, saveExport, saveMultiVisitExport, listExports, getSyncLog } from "./store.js";
+import { loadLatest, loadExport, saveRoundExport, listExports, getSyncLog, loadRoundMeta, migrateToRounds } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
@@ -92,7 +92,14 @@ program
 
     console.log("Auth:", creds?.email ? `Logged in as ${creds.email}` : "Not authenticated");
     console.log("Last sync:", syncLog.lastSync || "Never");
-    console.log("Exports:", exports.length, exports.length > 0 ? `(${exports[0]} to ${exports[exports.length - 1]})` : "");
+    console.log("Test rounds:", exports.length, exports.length > 0 ? `(${exports[0]} to ${exports[exports.length - 1]})` : "");
+    const metas = await Promise.all(exports.map(date => loadRoundMeta(date)));
+    for (let i = 0; i < exports.length; i++) {
+      const meta = metas[i];
+      if (meta) {
+        console.log(`  ${exports[i]}: ${meta.resultCount} results, visits: ${meta.visitDates.join(", ")}`);
+      }
+    }
     if (latest) {
       const inRange = latest.results.filter(r => r.inRange).length;
       console.log(`Latest results: ${latest.results.length} markers (${inRange} in range, ${latest.results.length - inRange} out)`);
@@ -118,11 +125,14 @@ program
         }
       }
 
+      // Migrate old per-visit exports to round-based (idempotent)
+      await migrateToRounds();
+
       const client = await FunctionHealthClient.create();
       console.log("Syncing data from Function Health...");
       const data = await client.exportAll();
-      const savedDates = await saveMultiVisitExport(data);
-      console.log(`Export saved: ${savedDates.join(", ")} (${data.results.length} results across ${savedDates.length} visit(s))`);
+      const savedDates = await saveRoundExport(data);
+      console.log(`Export saved: ${savedDates.join(", ")} (${data.results.length} results across ${savedDates.length} test round(s))`);
     } catch (err) {
       console.error("Sync failed:", (err as Error).message);
       process.exit(1);
@@ -247,12 +257,12 @@ program
 
 program
   .command("changes")
-  .description("Compare results between visits")
-  .option("--from <date>", "From visit date")
-  .option("--to <date>", "To visit date")
+  .description("Compare results between test rounds")
+  .option("--from <date>", "From test round date")
+  .option("--to <date>", "To test round date")
   .action(async (opts) => {
     const exports = await listExports();
-    if (exports.length < 2) { console.error("Need at least 2 exports to compare."); process.exit(1); }
+    if (exports.length < 2) { console.error("Need at least 2 test rounds to compare."); process.exit(1); }
 
     if (opts.from) validateDateOpt(opts.from, "--from");
     if (opts.to) validateDateOpt(opts.to, "--to");
@@ -266,7 +276,7 @@ program
 
     if (!fromData || !toData) { console.error("Could not load exports."); process.exit(1); }
 
-    const diff = diffExports(fromData, toData);
+    const diff = diffExports(fromData, toData, fromDate, toDate);
     console.log(JSON.stringify(diff, null, 2));
   });
 
@@ -282,7 +292,7 @@ program
       console.log("Exporting data...");
       const data = await client.exportAll();
 
-      const savedDates = await saveMultiVisitExport(data);
+      const savedDates = await saveRoundExport(data);
       console.log(`Data exported and stored (${savedDates.join(", ")})`);
 
       if (opts.markdown) {
