@@ -34,7 +34,7 @@ Add to your project's `.mcp.json`:
 First, authenticate via the CLI (password input is hidden):
 
 ```bash
-npx function-health-mcp login
+npx -y -p function-health-mcp function-health login
 ```
 
 Then ask Claude about your lab results:

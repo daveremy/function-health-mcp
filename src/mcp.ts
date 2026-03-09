@@ -64,7 +64,7 @@ server.registerTool("fh_login", {
 
   return text({
     authenticated: false,
-    message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx function-health-mcp login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync.",
+    message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx -y -p function-health-mcp function-health login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync.",
   });
 }));
 
