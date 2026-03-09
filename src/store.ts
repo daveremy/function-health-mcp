@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { ExportData, HealthResult, SyncLog } from "./types.js";
-import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE } from "./utils.js";
+import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE, partitionByVisitDate } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
@@ -61,6 +61,27 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
   }
 
   return exportDate;
+}
+
+/** Save a multi-visit export — partitions by visit date and saves each separately.
+ *  Returns sorted list of saved dates. */
+export async function saveMultiVisitExport(data: ExportData): Promise<string[]> {
+  const partitions = partitionByVisitDate(data);
+  const dates = [...partitions.keys()].sort();
+
+  for (const date of dates) {
+    await saveExport(partitions.get(date)!, date);
+  }
+
+  return dates;
+}
+
+/** Update the requisition count in the sync log (separate from per-export tracking) */
+export async function updateRequisitionCount(count: number): Promise<void> {
+  const log = await getSyncLog();
+  log.requisitionCount = count;
+  await ensureDir(DATA_DIR);
+  await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
 }
 
 /** Load the most recent export (reads pointer file, then loads the export) */

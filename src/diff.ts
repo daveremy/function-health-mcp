@@ -14,6 +14,7 @@ export function diffExports(from: ExportData, to: ExportData): DiffResult {
   const improved: BiomarkerChange[] = [];
   const worsened: BiomarkerChange[] = [];
   const significantlyChanged: BiomarkerChange[] = [];
+  const disappeared: BiomarkerChange[] = [];
   const unchanged: BiomarkerChange[] = [];
 
   for (const [name, toEntry] of toMap) {
@@ -53,8 +54,29 @@ export function diffExports(from: ExportData, to: ExportData): DiffResult {
     } else if (change.percentChange !== null && Math.abs(change.percentChange) > 10) {
       change.changeType = "changed";
       significantlyChanged.push(change);
+    } else if (change.percentChange === null && fromEntry.value !== toEntry.value) {
+      // Non-numeric value changed (e.g. "CLEAR" → "ABNORMAL")
+      change.changeType = "changed";
+      significantlyChanged.push(change);
     } else {
       unchanged.push(change);
+    }
+  }
+
+  // Detect disappeared markers (in fromMap but not in toMap)
+  for (const [name, fromEntry] of fromMap) {
+    if (!toMap.has(name)) {
+      const category = categoryMap.get(name.toLowerCase()) ?? "Unknown";
+      disappeared.push({
+        biomarkerName: name,
+        category,
+        previousValue: fromEntry.value,
+        currentValue: "",
+        previousInRange: fromEntry.inRange,
+        currentInRange: false,
+        changeType: "disappeared",
+        percentChange: null,
+      });
     }
   }
 
@@ -65,6 +87,7 @@ export function diffExports(from: ExportData, to: ExportData): DiffResult {
     improved,
     worsened,
     significantlyChanged,
+    disappeared,
     unchanged,
     summary: {
       totalCompared: toMap.size,
@@ -72,6 +95,7 @@ export function diffExports(from: ExportData, to: ExportData): DiffResult {
       improvedCount: improved.length,
       worsenedCount: worsened.length,
       significantChangeCount: significantlyChanged.length,
+      disappearedCount: disappeared.length,
       unchangedCount: unchanged.length,
     },
   };

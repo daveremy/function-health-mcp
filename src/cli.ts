@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { login, loadCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
-import { loadLatest, loadExport, saveExport, listExports, getSyncLog } from "./store.js";
+import { loadLatest, loadExport, saveExport, saveMultiVisitExport, listExports, getSyncLog } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
@@ -92,8 +92,8 @@ program
       const client = await FunctionHealthClient.create();
       console.log("Syncing data from Function Health...");
       const data = await client.exportAll();
-      const exportDate = await saveExport(data);
-      console.log(`Export saved: ${exportDate} (${data.results.length} results)`);
+      const savedDates = await saveMultiVisitExport(data);
+      console.log(`Export saved: ${savedDates.join(", ")} (${data.results.length} results across ${savedDates.length} visit(s))`);
     } catch (err) {
       console.error("Sync failed:", (err as Error).message);
       process.exit(1);
@@ -253,8 +253,8 @@ program
       console.log("Exporting data...");
       const data = await client.exportAll();
 
-      const exportDate = await saveExport(data);
-      console.log(`Data exported and stored (${exportDate})`);
+      const savedDates = await saveMultiVisitExport(data);
+      console.log(`Data exported and stored (${savedDates.join(", ")})`);
 
       if (opts.markdown) {
         console.log("Markdown export not yet implemented.");

@@ -15,17 +15,16 @@ Query and analyze Function Health lab results. This skill wraps 12 MCP tools for
 
 If `authenticated` is false:
 1. Tell the user they need to connect their Function Health account
-2. Ask for their Function Health email and password
-3. Call `fh_login` with their credentials
-4. On success, automatically run `fh_sync` to pull their data
-5. Then proceed with the requested action (or show a summary)
+2. Instruct them to run `npx function-health-mcp login` in their terminal (this keeps their password secure with hidden input)
+3. Once they confirm they've logged in, run `fh_sync` to pull their data
+4. Then proceed with the requested action (or show a summary)
 
 If `authenticated` is true but `hasData` is false:
 1. Run `fh_sync` to pull data
 2. Then proceed with the requested action
 
 If `tokenValid` is false (expired session):
-1. Ask the user to re-authenticate with `fh_login`
+1. Instruct the user to run `npx function-health-mcp login` in their terminal
 
 ## When to use
 
