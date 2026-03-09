@@ -203,6 +203,39 @@ export function filterResults(
   return filtered;
 }
 
+// ── Export partitioning ──
+
+/** Partition export data by visit date (dateOfService). Each partition gets a copy of shared data. */
+export function partitionByVisitDate(data: ExportData): Map<string, ExportData> {
+  const groups = new Map<string, HealthResult[]>();
+  for (const r of data.results) {
+    const date = (r.dateOfService || "").slice(0, 10);
+    if (!date) continue;
+    const list = groups.get(date);
+    if (list) list.push(r);
+    else groups.set(date, [r]);
+  }
+
+  if (groups.size <= 1) {
+    // Single visit or no results — return as-is keyed by the derived date
+    const date = groups.size === 1 ? [...groups.keys()][0] : deriveExportDate(data, new Date().toISOString().slice(0, 10));
+    const result = new Map<string, ExportData>();
+    result.set(date, data);
+    return result;
+  }
+
+  const partitions = new Map<string, ExportData>();
+  for (const [date, results] of groups) {
+    const resultNames = new Set(results.map(r => (getResultName(r) || "").toLowerCase()));
+    partitions.set(date, {
+      ...data,
+      results,
+      biomarkerDetails: data.biomarkerDetails.filter(d => resultNames.has(d.name.toLowerCase())),
+    });
+  }
+  return partitions;
+}
+
 // ── Misc ──
 
 /** Delay for rate limiting */

@@ -15,16 +15,9 @@ import type {
 } from "./types.js";
 import { ApiError } from "./types.js";
 import { getValidTokens, refreshToken, isTokenExpired } from "./auth.js";
-import { BASE_URL, DEFAULT_HEADERS, delay, resolveSexFilter } from "./utils.js";
+import { BASE_URL, DEFAULT_HEADERS, delay } from "./utils.js";
 
 const RATE_LIMIT_MS = 250;
-
-const BIOMARKER_DETAIL_STRING_FIELDS = [
-  "oneLineDescription", "whyItMatters", "recommendations", "causesDescription",
-  "symptomsDescription", "foodsToEatDescription", "foodsToAvoidDescription",
-  "supplementsDescription", "selfCareDescription", "additionalTestsDescription",
-  "followUpDescription", "resourcesCited",
-] as const;
 
 export class FunctionHealthClient {
   private tokens: AuthTokens;
@@ -138,10 +131,6 @@ export class FunctionHealthClient {
     return this.requestArray<Category>("/categories");
   }
 
-  async getBiomarkerData(sexDetailsId: string): Promise<Record<string, unknown> | null> {
-    return this.requestNullable<Record<string, unknown>>(`/biomarker-data/${sexDetailsId}`);
-  }
-
   async getRecommendations(): Promise<Recommendation[]> {
     return this.requestArray<Recommendation>("/recommendations");
   }
@@ -172,31 +161,6 @@ export class FunctionHealthClient {
 
   async getPendingSchedules(): Promise<Schedule[]> {
     return this.requestArray<Schedule>("/pending-schedules");
-  }
-
-  /** Fetch detailed info for all biomarkers (sex-specific).
-   *  Requests are enqueued in parallel — the rate-limited queue serializes them. */
-  async getBiomarkerDetails(biomarkers: Biomarker[], userSex?: string): Promise<BiomarkerDetail[]> {
-    const sexFilter = resolveSexFilter(userSex);
-
-    const promises = biomarkers.map(async (bm) => {
-      const match = bm.sexDetails.find(sd => sd.sex === sexFilter)
-        ?? bm.sexDetails.find(sd => sd.sex === "All");
-
-      if (!match) return makeBiomarkerDetail(bm, sexFilter, null);
-
-      // Gracefully degrade on per-biomarker failures so one transient error
-      // doesn't abort the entire export
-      let data: Record<string, unknown> | null = null;
-      try {
-        data = await this.getBiomarkerData(match.id);
-      } catch {
-        // Fall through with null — makeBiomarkerDetail handles missing data
-      }
-      return makeBiomarkerDetail(bm, sexFilter, data);
-    });
-
-    return Promise.all(promises);
   }
 
   /** Full data export — fetches all data in parallel, extracts results from report */
@@ -299,34 +263,4 @@ function extractResultsFromReport(report: Record<string, unknown> | null): { res
   }
 
   return { results, biomarkerDetails };
-}
-
-function makeBiomarkerDetail(bm: Biomarker, sexFilter: string, data: Record<string, unknown> | null): BiomarkerDetail {
-  const detail: BiomarkerDetail = {
-    id: bm.id,
-    name: bm.name,
-    oneLineDescription: "",
-    whyItMatters: "",
-    recommendations: "",
-    causesDescription: "",
-    symptomsDescription: "",
-    foodsToEatDescription: "",
-    foodsToAvoidDescription: "",
-    supplementsDescription: "",
-    selfCareDescription: "",
-    additionalTestsDescription: "",
-    followUpDescription: "",
-    resourcesCited: "",
-    sexFilter: sexFilter.toLowerCase(),
-    fullData: data,
-  };
-
-  if (data) {
-    detail.name = String(data.name || bm.name);
-    for (const field of BIOMARKER_DETAIL_STRING_FIELDS) {
-      detail[field] = String(data[field] || "");
-    }
-  }
-
-  return detail;
 }

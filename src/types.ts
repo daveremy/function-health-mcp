@@ -178,6 +178,7 @@ export class ApiError extends Error {
 // Sync metadata
 export interface SyncLog {
   lastSync: string;
+  requisitionCount?: number;
   exports: Array<{
     date: string;
     resultCount: number;
@@ -193,7 +194,7 @@ export interface BiomarkerChange {
   currentValue: string;
   previousInRange: boolean | null;
   currentInRange: boolean;
-  changeType: "improved" | "worsened" | "new" | "unchanged" | "changed";
+  changeType: "improved" | "worsened" | "new" | "unchanged" | "changed" | "disappeared";
   percentChange: number | null;
 }
 
@@ -204,6 +205,7 @@ export interface DiffResult {
   improved: BiomarkerChange[];
   worsened: BiomarkerChange[];
   significantlyChanged: BiomarkerChange[];
+  disappeared: BiomarkerChange[];
   unchanged: BiomarkerChange[];
   summary: {
     totalCompared: number;
@@ -211,6 +213,7 @@ export interface DiffResult {
     improvedCount: number;
     worsenedCount: number;
     significantChangeCount: number;
+    disappearedCount: number;
     unchangedCount: number;
   };
 }

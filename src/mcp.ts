@@ -3,8 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
-import { login, loadCredentials, getValidTokens } from "./auth.js";
-import { loadLatest, loadExport, loadExportResults, saveExport, listExports, getSyncLog } from "./store.js";
+import { loadCredentials, getValidTokens } from "./auth.js";
+import { loadLatest, loadExport, loadExportResults, saveMultiVisitExport, listExports, getSyncLog, updateRequisitionCount } from "./store.js";
 import { diffExports } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
@@ -38,19 +38,33 @@ function safeTool<T>(fn: (args: T) => Promise<ToolResult>): (args: T) => Promise
 
 // ── Auth Tools ──
 
+async function checkAuth(): Promise<{ authenticated: boolean; tokenValid: boolean; email: string | null }> {
+  const creds = await loadCredentials();
+  const authenticated = !!(creds?.idToken && creds?.refreshToken);
+  let tokenValid = false;
+  if (authenticated) {
+    try { await getValidTokens(); tokenValid = true; } catch { /* expired */ }
+  }
+  return { authenticated, tokenValid, email: creds?.email ?? null };
+}
+
 server.registerTool("fh_login", {
   title: "Login",
-  description: "Authenticate with Function Health. Required before syncing data. Takes email and password.",
-  inputSchema: z.object({
-    email: z.string().describe("Function Health account email"),
-    password: z.string().describe("Function Health account password"),
-  }),
-}, safeTool(async ({ email, password }) => {
-  const tokens = await login(email, password);
+  description: "Check authentication status. If not authenticated, instructs the user to run the CLI login command.",
+  inputSchema: z.object({}),
+}, safeTool(async () => {
+  const auth = await checkAuth();
+  if (auth.authenticated && auth.tokenValid) {
+    return text({
+      authenticated: true,
+      email: auth.email,
+      message: "Already authenticated. You can run fh_sync to pull your data.",
+    });
+  }
+
   return text({
-    authenticated: true,
-    email: tokens.email,
-    message: "Login successful. You can now run fh_sync to pull your data.",
+    authenticated: false,
+    message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx function-health-mcp login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync.",
   });
 }));
 
@@ -59,26 +73,12 @@ server.registerTool("fh_status", {
   description: "Check authentication status, data availability, and sync history. Use this to determine if the user needs to login or sync.",
   inputSchema: z.object({}),
 }, safeTool(async () => {
-  const creds = await loadCredentials();
-  const authenticated = !!(creds?.idToken && creds?.refreshToken);
-
-  let tokenValid = false;
-  if (authenticated) {
-    try {
-      await getValidTokens();
-      tokenValid = true;
-    } catch {
-      // Token expired and refresh failed
-    }
-  }
-
+  const auth = await checkAuth();
   const syncLog = await getSyncLog();
   const data = await loadLatest();
 
   return text({
-    authenticated,
-    tokenValid,
-    email: creds?.email ?? null,
+    ...auth,
     lastSync: syncLog.lastSync || null,
     exportCount: syncLog.exports.length,
     hasData: !!data,
@@ -275,21 +275,21 @@ server.registerTool("fh_sync", {
     }
   }
 
-  const previousResultCount = syncLog.exports.length > 0
-    ? syncLog.exports[syncLog.exports.length - 1].resultCount
-    : 0;
+  const previousResultCount = syncLog.exports.reduce((sum, e) => sum + e.resultCount, 0);
 
   server.server.sendLoggingMessage({ level: "info", data: "Syncing — fetching data from Function Health API..." });
   const client = await FunctionHealthClient.create();
   const data = await client.exportAll();
+  const requisitionCount = data.requisitions?.length ?? 0;
   server.server.sendLoggingMessage({ level: "info", data: `Fetched ${data.results.length} results, ${data.biomarkers.length} biomarkers. Saving...` });
-  const exportDate = await saveExport(data);
+  const savedDates = await saveMultiVisitExport(data);
+  await updateRequisitionCount(requisitionCount);
 
   const newResults = data.results.length - previousResultCount;
 
   return text({
     synced: true,
-    exportDate,
+    exportDates: savedDates,
     resultCount: data.results.length,
     newResults: Math.max(0, newResults),
     lastSync: new Date().toISOString(),
@@ -312,14 +312,11 @@ server.registerTool("fh_check", {
 
   const lastSync = syncLog.lastSync;
 
-  // Compare completed requisition count against last export to detect new results
-  // Without a baseline (no prior sync), we can't know if results are "new"
-  const lastExport = syncLog.exports.length > 0
-    ? syncLog.exports[syncLog.exports.length - 1]
-    : null;
-  const newResultsAvailable = lastExport
-    ? completed.length > lastExport.resultCount
-    : false;
+  // Compare completed requisition count against stored count to detect new results
+  const storedRequisitionCount = syncLog.requisitionCount;
+  const newResultsAvailable = storedRequisitionCount !== undefined
+    ? completed.length > storedRequisitionCount
+    : null; // null = unknown, suggest syncing
 
   return text({
     pendingRequisitions: pending.length,

@@ -31,13 +31,19 @@ Add to your project's `.mcp.json`:
 
 ### 2. Start using it
 
-Just ask Claude about your lab results. On first use, Claude will walk you through authentication — no CLI needed:
+First, authenticate via the CLI (password input is hidden):
+
+```bash
+npx function-health-mcp login
+```
+
+Then ask Claude about your lab results:
 
 > "Show me my lab results"
 > "Deep dive on my Vitamin D levels"
 > "What changed between my last two visits?"
 
-Claude will ask for your Function Health email and password, authenticate, sync your data, and show your results — all conversationally.
+Claude will sync your data and show your results conversationally.
 
 ### 3. Install the skill (optional)
 
@@ -67,7 +73,7 @@ Then use the CLI directly:
 
 | Tool | Description |
 |------|-------------|
-| `fh_login` | Authenticate with Function Health (email + password) |
+| `fh_login` | Check auth status (directs to CLI login if needed) |
 | `fh_status` | Check auth status, data availability, and sync history |
 | `fh_results` | Query lab results with filters (biomarker, category, status, visit) |
 | `fh_biomarker` | Deep dive on a biomarker: value, ranges, history, recommendations |
@@ -137,6 +143,10 @@ In v0.3.0, all MCP tool names were shortened from `function_health_*` to `fh_*` 
 
 - Node.js 18+ (uses native `fetch`)
 - A [Function Health](https://www.functionhealth.com/) account with lab results
+
+## Acknowledgments
+
+Inspired by [function-health-exporter](https://github.com/bogini/function-health-exporter) by Inigo Beitia Arevalo, which pioneered the reverse-engineered API approach for exporting Function Health lab data.
 
 ## License
 
