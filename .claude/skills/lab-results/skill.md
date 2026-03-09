@@ -1,5 +1,5 @@
 ---
-name: lab-results
+name: fh-lab-results
 description: Query Function Health lab results, check for new data, compare visits, and deep-dive on biomarkers. Use when the user asks about labs, bloodwork, biomarkers, or health markers.
 argument-hint: "[summary | check | sync | biomarker <name> | changes | out-of-range | category <name>]"
 allowed-tools: mcp__function-health__function_health_login, mcp__function-health__function_health_status, mcp__function-health__function_health_results, mcp__function-health__function_health_biomarker, mcp__function-health__function_health_summary, mcp__function-health__function_health_categories, mcp__function-health__function_health_changes, mcp__function-health__function_health_sync, mcp__function-health__function_health_check, mcp__function-health__function_health_recommendations, mcp__function-health__function_health_report
