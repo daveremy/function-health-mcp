@@ -39,11 +39,16 @@ program
   .option("-e, --email <email>", "Email address")
   .option("-p, --password <password>", "Password")
   .action(async (opts) => {
+    if (!opts.email || !opts.password) {
+      console.log("\nFunction Health Login");
+      console.log("─".repeat(30));
+    }
     const email = opts.email ?? await prompt("Email: ");
     const password = opts.password ?? await promptSecret("Password: ");
     try {
       const tokens = await login(email, password);
       console.log(`Logged in as ${tokens.email}`);
+      process.exit(0);
     } catch (err) {
       console.error("Login failed:", (err as Error).message);
       process.exit(1);
