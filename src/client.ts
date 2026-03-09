@@ -199,29 +199,20 @@ export class FunctionHealthClient {
     return Promise.all(promises);
   }
 
-  /** Full data export — core endpoints fail fast, optional endpoints degrade gracefully */
+  /** Full data export — fetches all data in parallel, extracts results from report */
   async exportAll(): Promise<ExportData> {
-    // Core endpoints — failures here should abort the export
-    const [profile, results, biomarkers, categories] = await Promise.all([
-      this.getProfile(),
-      this.getResults(),
-      this.getBiomarkers(),
-      this.getCategories(),
-    ]);
-
-    // Fail fast if API returned nothing at all (likely auth failure, not empty account)
-    if (results.length === 0 && biomarkers.length === 0 && !profile && categories.length === 0) {
-      throw new Error("Export failed: API returned no data. Possible authentication or server issue.");
-    }
-
-    // Optional endpoints — degrade to defaults on transient errors
+    // Optional fetch wrapper — degrade to defaults on transient errors
     const optionalFetch = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
       try { return await fn(); } catch { return fallback; }
     };
 
-    const [recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
+    // Fetch everything in parallel — report is the primary source of result data
+    const [profile, biomarkers, categories, recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules] = await Promise.all([
+      this.getProfile(),
+      this.getBiomarkers(),
+      this.getCategories(),
       optionalFetch(() => this.getRecommendations(), []),
-      optionalFetch(() => this.getResultsReport(), null),
+      this.getResultsReport(),
       optionalFetch(() => this.getBiologicalAge(), null),
       optionalFetch(() => this.getBMI(), null),
       optionalFetch(() => this.getNotes(), []),
@@ -229,14 +220,85 @@ export class FunctionHealthClient {
       optionalFetch(() => this.getPendingSchedules(), []),
     ]);
 
-    const userSex = profile?.biologicalSex;
-    const biomarkerDetails = await this.getBiomarkerDetails(biomarkers, userSex);
+    if (!report && !profile && biomarkers.length === 0 && categories.length === 0) {
+      throw new Error("Export failed: API returned no data. Possible authentication or server issue.");
+    }
+
+    // Extract results and biomarker details from the report's biomarkerResultsRecord
+    const { results, biomarkerDetails } = extractResultsFromReport(report);
 
     return {
       profile, results, biomarkers, categories, biomarkerDetails,
       recommendations, report, biologicalAge, bmi, notes, requisitions, pendingSchedules,
     };
   }
+}
+
+/** Extract HealthResult[] and BiomarkerDetail[] from the report's biomarkerResultsRecord.
+ *  This is the primary source of actual lab values — the /results endpoint returns requisition PDFs. */
+function extractResultsFromReport(report: Record<string, unknown> | null): { results: HealthResult[]; biomarkerDetails: BiomarkerDetail[] } {
+  const results: HealthResult[] = [];
+  const biomarkerDetails: BiomarkerDetail[] = [];
+
+  if (!report) return { results, biomarkerDetails };
+
+  const data = report.data as Record<string, unknown> | undefined;
+  if (!data) return { results, biomarkerDetails };
+
+  const records = data.biomarkerResultsRecord as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(records)) return { results, biomarkerDetails };
+
+  for (const record of records) {
+    const biomarker = record.biomarker as Record<string, unknown> | undefined;
+    const currentResult = record.currentResult as Record<string, unknown> | undefined;
+    const biomarkerName = biomarker?.name as string || "";
+
+    // Extract the current result as a HealthResult
+    if (currentResult) {
+      results.push({
+        id: String(currentResult.id || ""),
+        biomarkerName,
+        dateOfService: String(currentResult.dateOfService || ""),
+        calculatedResult: String(currentResult.calculatedResult || ""),
+        displayResult: String(currentResult.displayResult || ""),
+        inRange: currentResult.inRange === true,
+        requisitionId: String(currentResult.requisitionId || ""),
+        outOfRangeType: String(record.outOfRangeType || ""),
+        units: String(record.units || ""),
+        optimalRange: String(record.optimalRange || ""),
+        rangeString: String(record.rangeString || ""),
+      });
+    }
+
+    // Extract biomarker detail from the inline biomarker data
+    if (biomarker) {
+      const detail: BiomarkerDetail = {
+        id: String(biomarker.id || ""),
+        name: biomarkerName,
+        oneLineDescription: "",
+        whyItMatters: String(biomarker.whyItMatters || ""),
+        recommendations: "",
+        causesDescription: "",
+        symptomsDescription: "",
+        foodsToEatDescription: "",
+        foodsToAvoidDescription: "",
+        supplementsDescription: "",
+        selfCareDescription: "",
+        additionalTestsDescription: "",
+        followUpDescription: "",
+        resourcesCited: "",
+        sexFilter: "",
+        fullData: null,
+      };
+      const sexDetails = biomarker.sexDetails as Array<Record<string, unknown>> | undefined;
+      if (sexDetails && sexDetails[0]) {
+        detail.oneLineDescription = String(sexDetails[0].oneLineDescription || "");
+      }
+      biomarkerDetails.push(detail);
+    }
+  }
+
+  return { results, biomarkerDetails };
 }
 
 function makeBiomarkerDetail(bm: Biomarker, sexFilter: string, data: Record<string, unknown> | null): BiomarkerDetail {

@@ -41,14 +41,19 @@ export interface UserProfile {
   patientMembership: string;
 }
 
-// Lab results
+// Lab results (extracted from report's biomarkerResultsRecord)
 export interface HealthResult {
   id: string;
+  biomarkerName: string;
   dateOfService: string;
   calculatedResult: string;
   displayResult: string;
   inRange: boolean;
   requisitionId: string;
+  outOfRangeType?: string;
+  units?: string;
+  optimalRange?: string;
+  rangeString?: string;
   [key: string]: unknown;
 }
 
