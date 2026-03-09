@@ -2,8 +2,8 @@
 import { Command } from "commander";
 import { login, loadCredentials, getValidTokens, clearCredentials } from "./auth.js";
 import { FunctionHealthClient } from "./client.js";
-import { loadLatest, loadExport, saveRoundExport, listExports, getSyncLog, loadRoundMeta, migrateToRounds } from "./store.js";
-import { diffExports } from "./diff.js";
+import { loadLatest, loadExport, saveRoundExport, listExports, getSyncLog, loadRoundMeta, migrateToRounds, loadAllExportsAggregated, loadChangeNotifications, clearChangeNotifications } from "./store.js";
+import { diffExports, detectAndSaveChanges } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
@@ -128,11 +128,26 @@ program
       // Migrate old per-visit exports to round-based (idempotent)
       await migrateToRounds();
 
+      // Before saving: aggregate all existing rounds for change detection
+      const { data: previousData, roundCount: previousRoundCount } = await loadAllExportsAggregated();
+
       const client = await FunctionHealthClient.create();
       console.log("Syncing data from Function Health...");
       const data = await client.exportAll();
       const savedDates = await saveRoundExport(data);
       console.log(`Export saved: ${savedDates.join(", ")} (${data.results.length} results across ${savedDates.length} test round(s))`);
+
+      // Change detection
+      const summary = await detectAndSaveChanges(previousData, data, savedDates, previousRoundCount);
+
+      if (summary.length > 0) {
+        console.log("\nChanges detected:");
+        for (const line of summary) {
+          console.log(`  • ${line}`);
+        }
+      } else if (previousData) {
+        console.log("No changes detected.");
+      }
     } catch (err) {
       console.error("Sync failed:", (err as Error).message);
       process.exit(1);
@@ -157,6 +172,32 @@ program
     } catch (err) {
       console.error("Check failed:", (err as Error).message);
       process.exit(1);
+    }
+  });
+
+program
+  .command("notifications")
+  .description("Show pending change notifications from syncs")
+  .option("--clear", "Clear notifications after displaying")
+  .action(async (opts) => {
+    const { notifications, files } = await loadChangeNotifications();
+    if (notifications.length === 0) {
+      console.log("No pending notifications.");
+      return;
+    }
+
+    console.log(`${notifications.length} notification(s):\n`);
+    for (const n of notifications) {
+      console.log(`[${n.timestamp}]`);
+      for (const line of n.summary) {
+        console.log(`  • ${line}`);
+      }
+      console.log();
+    }
+
+    if (opts.clear) {
+      const count = await clearChangeNotifications(files);
+      console.log(`Cleared ${count} notification(s).`);
     }
   });
 

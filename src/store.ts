@@ -1,13 +1,16 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import type { ExportData, HealthResult, RoundMeta, SyncLog } from "./types.js";
+import type { ExportData, HealthResult, RoundMeta, SyncLog, ChangeNotification } from "./types.js";
 import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE, groupByRound, extractRequisitionId, extractVisitDates, today } from "./utils.js";
 
 const DATA_DIR = path.join(os.homedir(), ".function-health");
 const EXPORTS_DIR = path.join(DATA_DIR, "exports");
+const CHANGES_DIR = path.join(DATA_DIR, "changes");
 const LATEST_PATH = path.join(DATA_DIR, "latest.json");
 const SYNC_LOG_PATH = path.join(DATA_DIR, "sync-log.json");
+
+const MAX_CHANGE_FILES = 100;
 
 async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true, mode: DIR_MODE });
@@ -383,6 +386,107 @@ async function rebuildSyncLog(): Promise<void> {
   log.exports = entries;
   await ensureDir(DATA_DIR);
   await writeSecure(SYNC_LOG_PATH, JSON.stringify(log, null, 2));
+}
+
+// ── Change notification persistence ──
+
+/** Save a change notification as a timestamped JSON file. Prunes oldest files beyond MAX_CHANGE_FILES. */
+export async function saveChangeNotification(n: ChangeNotification): Promise<string> {
+  await ensureDir(CHANGES_DIR);
+  const safeTs = n.timestamp.replace(/:/g, "-");
+  const filePath = path.join(CHANGES_DIR, `${safeTs}.json`);
+  await writeSecure(filePath, JSON.stringify(n, null, 2));
+
+  // Prune oldest files at write time to prevent unbounded growth
+  // while never deleting unread notifications during a read
+  try {
+    const entries = await fs.readdir(CHANGES_DIR);
+    const jsonFiles = entries.filter(e => e.endsWith(".json")).sort();
+    if (jsonFiles.length > MAX_CHANGE_FILES) {
+      const toDelete = jsonFiles.slice(0, jsonFiles.length - MAX_CHANGE_FILES);
+      await Promise.all(toDelete.map(f => fs.unlink(path.join(CHANGES_DIR, f)).catch(() => {})));
+    }
+  } catch {
+    // Non-critical — notification was already saved
+  }
+
+  return filePath;
+}
+
+/** Load all change notifications, sorted ascending by timestamp.
+ *  Returns notifications and their filenames for safe clearing. */
+export async function loadChangeNotifications(): Promise<{ notifications: ChangeNotification[]; files: string[] }> {
+  try {
+    const entries = await fs.readdir(CHANGES_DIR);
+    const jsonFiles = entries.filter(e => e.endsWith(".json")).sort();
+
+    const loaded: { notification: ChangeNotification; file: string }[] = [];
+    await Promise.all(jsonFiles.map(async (file) => {
+      try {
+        const raw = await fs.readFile(path.join(CHANGES_DIR, file), "utf-8");
+        loaded.push({ notification: JSON.parse(raw) as ChangeNotification, file });
+      } catch {
+        // Skip corrupt files
+      }
+    }));
+    loaded.sort((a, b) => a.file.localeCompare(b.file));
+    return {
+      notifications: loaded.map(l => l.notification),
+      files: loaded.map(l => l.file),
+    };
+  } catch {
+    return { notifications: [], files: [] };
+  }
+}
+
+/** Clear specific change notification files. Only deletes the named files,
+ *  avoiding race conditions with notifications created after the read. */
+export async function clearChangeNotifications(files: string[]): Promise<number> {
+  try {
+    await Promise.all(files.map(f => fs.unlink(path.join(CHANGES_DIR, f)).catch(() => {})));
+    return files.length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Load all round exports and merge into a single aggregated ExportData.
+ *  Returns null if no exports exist. Also returns the round count to avoid redundant listExports() calls. */
+export async function loadAllExportsAggregated(): Promise<{ data: ExportData | null; roundCount: number }> {
+  const dates = await listExports();
+  if (dates.length === 0) return { data: null, roundCount: 0 };
+
+  const exports = await Promise.all(dates.map(d => loadExport(d)));
+  const loaded = exports.filter((e): e is ExportData => e !== null);
+  if (loaded.length === 0) return { data: null, roundCount: dates.length };
+
+  // Take shared fields from the most recent round
+  const latest = loaded[loaded.length - 1];
+
+  // Merge results (deduplicate by id)
+  const resultMap = new Map<string, ExportData["results"][0]>();
+  for (const exp of loaded) {
+    for (const r of exp.results) {
+      resultMap.set(r.id, r);
+    }
+  }
+
+  // Merge biomarkerDetails (deduplicate by name)
+  const detailMap = new Map<string, ExportData["biomarkerDetails"][0]>();
+  for (const exp of loaded) {
+    for (const d of exp.biomarkerDetails) {
+      detailMap.set(d.name.toLowerCase(), d);
+    }
+  }
+
+  return {
+    data: {
+      ...latest,
+      results: [...resultMap.values()],
+      biomarkerDetails: [...detailMap.values()],
+    },
+    roundCount: dates.length,
+  };
 }
 
 async function readJson(filePath: string, required = false): Promise<unknown> {

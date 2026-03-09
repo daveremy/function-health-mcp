@@ -4,8 +4,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { FunctionHealthClient } from "./client.js";
 import { loadCredentials, getValidTokens } from "./auth.js";
-import { loadLatest, loadExport, loadExportResults, saveRoundExport, listExports, getSyncLog, updateRequisitionCount, loadRoundMeta, migrateToRounds } from "./store.js";
-import { diffExports } from "./diff.js";
+import { loadLatest, loadExport, loadExportResults, saveRoundExport, listExports, getSyncLog, updateRequisitionCount, loadRoundMeta, migrateToRounds, loadAllExportsAggregated, loadChangeNotifications, clearChangeNotifications } from "./store.js";
+import { diffExports, detectAndSaveChanges } from "./diff.js";
 import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
 import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
@@ -287,10 +287,11 @@ server.registerTool("fh_sync", {
     }
   }
 
-  const previousResultCount = syncLog.exports.reduce((sum, e) => sum + e.resultCount, 0);
-
   // Migrate old per-visit exports to round-based (idempotent)
   await migrateToRounds();
+
+  // Before saving: aggregate all existing rounds for change detection
+  const { data: previousData, roundCount: previousRoundCount } = await loadAllExportsAggregated();
 
   server.server.sendLoggingMessage({ level: "info", data: "Syncing — fetching data from Function Health API..." });
   const client = await FunctionHealthClient.create();
@@ -300,15 +301,18 @@ server.registerTool("fh_sync", {
   const savedDates = await saveRoundExport(data);
   await updateRequisitionCount(requisitionCount);
 
-  const newResults = data.results.length - previousResultCount;
+  // Change detection: compare fresh API data against previous aggregate
+  const summary = await detectAndSaveChanges(previousData, data, savedDates, previousRoundCount);
+  const newRounds = savedDates.length - previousRoundCount;
 
   return text({
     synced: true,
     roundDates: savedDates,
     resultCount: data.results.length,
-    newResults: Math.max(0, newResults),
+    newRounds,
     lastSync: new Date().toISOString(),
-    hasChanges: newResults > 0,
+    hasChanges: summary.length > 0,
+    changeSummary: summary.length > 0 ? summary : undefined,
   });
 }));
 
@@ -340,6 +344,27 @@ server.registerTool("fh_check", {
     lastSync: lastSync || "never",
     newResultsAvailable,
     note: "This checks for new test rounds only. To detect new batches within a round, run fh_sync.",
+  });
+}));
+
+// ── Notification Tools ──
+
+server.registerTool("fh_notifications", {
+  title: "Change Notifications",
+  description: "Read pending change notifications from syncs. Notifications accumulate until acknowledged. Use acknowledge=true to clear after reading.",
+  inputSchema: z.object({
+    acknowledge: z.boolean().optional().describe("Clear notifications after reading"),
+  }),
+}, safeTool(async ({ acknowledge }) => {
+  const { notifications, files } = await loadChangeNotifications();
+  let acknowledged = 0;
+  if (acknowledge && files.length > 0) {
+    acknowledged = await clearChangeNotifications(files);
+  }
+  return text({
+    count: notifications.length,
+    notifications,
+    acknowledged,
   });
 }));
 
