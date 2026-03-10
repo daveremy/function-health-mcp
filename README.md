@@ -152,13 +152,17 @@ Function Health runs comprehensive lab panels requiring 1-3 lab visits over seve
 - **Atomic writes**: Exports use a temp-directory-then-rename pattern to prevent data corruption.
 - **Graceful degradation**: Optional API endpoints (recommendations, notes, biological age) don't block the export if they fail.
 
+## Migrating from v0.5.0
+
+In v0.5.1, skills moved from `.claude/skills/lab-results/` to `skills/fh-lab-results/` and a new `skills/fh-usage/` reference skill was added. If you have skills copied into your project, re-copy them from the new paths (see [Manual MCP Setup](#option-b-manual-mcp-setup) above).
+
 ## Migrating from v0.3.x
 
 In v0.4.0, exports are grouped by test round (requisitionId) instead of individual visit dates. On first sync, old per-visit exports are automatically migrated — multiple visit directories sharing a requisitionId are merged into a single round directory. No manual action needed.
 
 ## Migrating from v0.2.x
 
-In v0.3.0, all MCP tool names were shortened from `function_health_*` to `fh_*` and the skill was renamed from `lab-results` to `fh-lab-results`. If you have the skill copied into your project, re-copy it to get the updated tool references.
+In v0.3.0, all MCP tool names were shortened from `function_health_*` to `fh_*` and the skill was renamed from `lab-results` to `fh-lab-results`.
 
 ## API Documentation
 
