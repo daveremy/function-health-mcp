@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { isDeepStrictEqual } from "node:util";
 import type { ExportData, HealthResult, RoundMeta, SyncLog, ChangeNotification } from "./types.js";
 import { deriveExportDate, isValidDateString, writeSecure, isFileNotFound, validateDate, DIR_MODE, groupByRound, extractRequisitionId, extractVisitDates, today } from "./utils.js";
 
@@ -16,10 +17,19 @@ async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true, mode: DIR_MODE });
 }
 
-/** Save an export atomically — writes to a temp directory then renames */
+/** Save an export atomically — writes to a temp directory then renames.
+ *  Skips writing if the data on disk is identical (idempotent). */
 export async function saveExport(data: ExportData, date?: string): Promise<string> {
   const exportDate = validateDate(date ?? deriveExportDate(data, today()));
   const exportDir = path.join(EXPORTS_DIR, exportDate);
+
+  // Skip write if existing data is identical
+  const existing = await loadExport(exportDate);
+  if (existing && exportsEqual(existing, data)) {
+    await updatePointers(exportDate, data.results.length);
+    return exportDate;
+  }
+
   const tmpDir = `${exportDir}.tmp.${Date.now()}`;
   await ensureDir(tmpDir);
 
@@ -52,11 +62,7 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
     }
     await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
 
-    // Update latest pointer and sync log (non-atomic but non-critical)
-    await Promise.all([
-      writeSecure(LATEST_PATH, JSON.stringify({ date: exportDate })),
-      updateSyncLog(exportDate, data.results.length),
-    ]);
+    await updatePointers(exportDate, data.results.length);
   } catch (err) {
     // Clean up temp dir on failure
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -64,6 +70,19 @@ export async function saveExport(data: ExportData, date?: string): Promise<strin
   }
 
   return exportDate;
+}
+
+/** Update latest pointer and sync log (non-atomic but non-critical) */
+async function updatePointers(exportDate: string, resultCount: number): Promise<void> {
+  await Promise.all([
+    writeSecure(LATEST_PATH, JSON.stringify({ date: exportDate })),
+    updateSyncLog(exportDate, resultCount),
+  ]);
+}
+
+/** Compare two exports for equality using deep structural comparison */
+export function exportsEqual(a: ExportData, b: ExportData): boolean {
+  return isDeepStrictEqual(a, b);
 }
 
 /** Save an export grouped by test round (requisitionId).

@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { deriveExportDate, validateDate, isValidDateString, fuzzyMatch, getResultName, getResultValue, buildOutOfRangeSet, filterResults } from "../src/utils.js";
-import { makeResult } from "./helpers.js";
+import { exportsEqual } from "../src/store.js";
+import { makeResult, makeExport } from "./helpers.js";
 
 describe("deriveExportDate", () => {
   it("returns latest dateOfService from results", () => {
@@ -150,5 +151,29 @@ describe("filterResults", () => {
   it("returns all when no filters", () => {
     const filtered = filterResults(results, {});
     assert.equal(filtered.length, 3);
+  });
+});
+
+describe("exportsEqual", () => {
+  it("returns true for identical exports", () => {
+    const a = makeExport({ results: [makeResult()] });
+    const b = makeExport({ results: [makeResult()] });
+    assert.equal(exportsEqual(a, b), true);
+  });
+
+  it("returns false when results differ", () => {
+    const a = makeExport({ results: [makeResult({ displayResult: "30" })] });
+    const b = makeExport({ results: [makeResult({ displayResult: "42" })] });
+    assert.equal(exportsEqual(a, b), false);
+  });
+
+  it("returns false when metadata differs", () => {
+    const a = makeExport({ biologicalAge: { age: 35 } });
+    const b = makeExport({ biologicalAge: { age: 37 } });
+    assert.equal(exportsEqual(a, b), false);
+  });
+
+  it("returns true for empty exports", () => {
+    assert.equal(exportsEqual(makeExport(), makeExport()), true);
   });
 });

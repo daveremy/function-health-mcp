@@ -138,12 +138,4 @@ This ensures the user gets a complete picture without needing to ask follow-up q
 
 ## Periodic Monitoring
 
-Background syncs keep data fresh:
-
-```
-/loop 6h /fh-lab-results sync
-```
-
-Syncs automatically write change notification files when anything changes. The daily briefing workflow (above) picks these up — no manual checking needed.
-
-Change notifications persist across conversations, so missed days don't lose data. New lab results from Function Health typically arrive in batches over several weeks as different panels complete.
+Change notifications persist across conversations — missed days don't lose data. New lab results from Function Health typically arrive in batches over several weeks as different panels complete. The daily briefing workflow (above) is one way to surface these; alternatively, just run `/fh-lab-results check` periodically.
