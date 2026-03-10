@@ -16,10 +16,11 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 
 ### Option A: Install as Claude Code Plugin
 
-Install from the marketplace for zero-config MCP setup with skills included:
+Install from the plugin marketplace for zero-config MCP setup with skills included:
 
-```bash
-claude plugin add daveremy/function-health-mcp
+```
+/plugin marketplace add daveremy/function-health-mcp
+/plugin install function-health-mcp@function-health-mcp-plugins
 ```
 
 This automatically configures the MCP server and installs the `/fh-lab-results` skill.
