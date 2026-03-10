@@ -1,6 +1,6 @@
 {
   "name": "function-health-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Function Health MCP server and CLI — query lab results, detect changes, track biomarkers",
   "type": "module",
   "license": "MIT",

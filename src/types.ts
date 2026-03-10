@@ -195,6 +195,25 @@ export interface SyncLog {
   }>;
 }
 
+// Change notification types
+export interface MetaChanges {
+  biologicalAge?: { previous: number | null; current: number | null };
+  bmi?: { previous: number | null; current: number | null };
+  recommendationCountDelta?: number;
+  newNotes?: number;
+  newRequisitions?: number;
+  reportChanged?: boolean;
+}
+
+export interface ChangeNotification {
+  timestamp: string;
+  syncedRounds: string[];
+  totalResults: number;
+  resultDiff: DiffResult | null;
+  metaChanges: MetaChanges;
+  summary: string[];
+}
+
 // Diff types
 export interface BiomarkerChange {
   biomarkerName: string;

@@ -2,12 +2,12 @@
 name: fh-lab-results
 description: Query Function Health lab results, check for new data, compare visits, and deep-dive on biomarkers. Use when the user asks about labs, bloodwork, biomarkers, or health markers.
 argument-hint: "[summary | check | sync | biomarker <name> | changes | out-of-range | category <name>]"
-allowed-tools: mcp__function-health__fh_login, mcp__function-health__fh_status, mcp__function-health__fh_results, mcp__function-health__fh_biomarker, mcp__function-health__fh_summary, mcp__function-health__fh_categories, mcp__function-health__fh_changes, mcp__function-health__fh_sync, mcp__function-health__fh_check, mcp__function-health__fh_recommendations, mcp__function-health__fh_report, mcp__function-health__fh_version
+allowed-tools: mcp__function-health__fh_login, mcp__function-health__fh_status, mcp__function-health__fh_results, mcp__function-health__fh_biomarker, mcp__function-health__fh_summary, mcp__function-health__fh_categories, mcp__function-health__fh_changes, mcp__function-health__fh_sync, mcp__function-health__fh_check, mcp__function-health__fh_recommendations, mcp__function-health__fh_report, mcp__function-health__fh_version, mcp__function-health__fh_notifications
 ---
 
 # Lab Results Skill
 
-Query and analyze Function Health lab results. This skill wraps 12 MCP tools for a conversational lab results experience.
+Query and analyze Function Health lab results. This skill wraps 13 MCP tools for a conversational lab results experience.
 
 ## First-Time Setup (Onboarding)
 
@@ -86,6 +86,24 @@ Parse from $ARGUMENTS:
    - Recommendations (foods, supplements, lifestyle)
 3. Keep it conversational — lead with the number, then context
 
+### Daily Briefing
+
+For daily review / morning briefing, include a Function Health section:
+
+1. Call `fh_notifications` (without acknowledge) to check for pending changes
+2. If no notifications → report "No new lab data" and move on
+3. If there are notifications, present them:
+   - Lead with what's significant: worsened markers, biological age changes
+   - Then improvements and new results
+   - For new results, automatically call `fh_changes` to compare against previous rounds of the same tests — show how values moved
+   - For any newly out-of-range marker, call `fh_biomarker` to get context and recommendations
+4. After presenting everything, call `fh_notifications` with `acknowledge: true` to clear
+
+This ensures the user gets a complete picture without needing to ask follow-up questions.
+
+**Example output:**
+> **Function Health:** New lab results came in yesterday. 3 new results — Vitamin D improved to 42 (was 28, now in range), A1C steady at 5.4. LDL moved out of range at 142 (was 128). I'd recommend focusing on the LDL — here are the dietary recommendations...
+
 ### Compare Test Rounds
 
 1. Call `fh_changes`
@@ -120,14 +138,12 @@ Parse from $ARGUMENTS:
 
 ## Periodic Monitoring
 
-This skill works with `/loop` for automatic checking:
+Background syncs keep data fresh:
 
 ```
-/loop 6h /fh-lab-results check
+/loop 6h /fh-lab-results sync
 ```
 
-When new results are detected:
-1. `fh_check` returns `newResultsAvailable: true`
-2. Automatically run `fh_sync`
-3. Run `fh_changes` to compare with previous visit
-4. Present the changes summary conversationally
+Syncs automatically write change notification files when anything changes. The daily briefing workflow (above) picks these up — no manual checking needed.
+
+Change notifications persist across conversations, so missed days don't lose data. New lab results from Function Health typically arrive in batches over several weeks as different panels complete.

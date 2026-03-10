@@ -6,8 +6,8 @@ MCP server + CLI for querying Function Health lab results, detecting changes bet
 
 ```
 src/
-  mcp.ts       - MCP server entry point (stdio transport, 12 tools)
-  cli.ts       - CLI entry point (commander, 10 commands)
+  mcp.ts       - MCP server entry point (stdio transport, 13 tools)
+  cli.ts       - CLI entry point (commander, 11 commands)
   client.ts    - Function Health API client (rate-limited, token-managed)
   auth.ts      - Firebase auth (login, token refresh, credential storage)
   types.ts     - TypeScript interfaces
@@ -16,11 +16,12 @@ src/
   utils.ts     - groupByRound, fuzzy match, date helpers, file helpers
   version.ts   - Version constant
 test/
-  round.test.ts      - groupByRound tests
-  diff.test.ts       - diffExports tests
-  migration.test.ts  - Migration and extraction helpers
-  utils.test.ts      - Utility function tests
-  helpers.ts         - Test factories (makeResult, makeExport, etc.)
+  round.test.ts         - groupByRound tests
+  diff.test.ts          - diffExports tests
+  notifications.test.ts - diffMeta, buildChangeSummary tests
+  migration.test.ts     - Migration and extraction helpers
+  utils.test.ts         - Utility function tests
+  helpers.ts            - Test factories (makeResult, makeExport, etc.)
 docs/
   api-reference.md   - Reverse-engineered Function Health API documentation
 ```
@@ -30,7 +31,7 @@ docs/
 ```bash
 npm run build          # TypeScript → dist/
 npm run dev            # Run CLI via tsx
-npm test               # Run 60 unit tests via node:test + tsx
+npm test               # Run 75 unit tests via node:test + tsx
 node dist/mcp.js       # Run MCP server
 node dist/cli.js       # Run CLI
 ```
@@ -52,6 +53,8 @@ node dist/cli.js       # Run CLI
   credentials.json     - Auth tokens (0o600)
   latest.json          - Pointer to most recent export
   sync-log.json        - Sync history and requisition tracking
+  changes/
+    {timestamp}.json   - Change notifications (accumulate until acknowledged)
   exports/
     YYYY-MM-DD/        - One directory per test round (keyed by earliest visit date)
       results.json     - All results across all visits in this round
@@ -78,8 +81,9 @@ node dist/cli.js       # Run CLI
 - `fh_summary` - Health overview: totals, biological age, BMI, out-of-range
 - `fh_categories` - Category listing with out-of-range counts
 - `fh_changes` - Compare two test rounds: improved, worsened, new, changed
-- `fh_sync` - Pull latest data (auto-migrates old exports to round model)
+- `fh_sync` - Pull latest data, detect changes, write notifications
 - `fh_check` - Lightweight new-results check (requisition count only)
+- `fh_notifications` - Read/clear change notifications from syncs
 - `fh_recommendations` - Health recommendations, optionally by category
 - `fh_report` - Full clinician report
 - `fh_version` - Check for updates
