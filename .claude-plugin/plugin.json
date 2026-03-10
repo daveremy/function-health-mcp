@@ -1,0 +1,14 @@
+{
+  "name": "function-health-mcp",
+  "description": "Query Function Health lab results, track biomarker changes, and get health recommendations",
+  "version": "0.5.1",
+  "author": { "name": "daveremy" },
+  "homepage": "https://github.com/daveremy/function-health-mcp",
+  "repository": "https://github.com/daveremy/function-health-mcp",
+  "mcpServers": {
+    "function-health": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp.js"]
+    }
+  }
+}
