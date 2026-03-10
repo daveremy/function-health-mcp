@@ -1,7 +1,7 @@
 {
   "name": "function-health-mcp",
   "description": "Query Function Health lab results, track biomarker changes, and get health recommendations",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "author": { "name": "daveremy" },
   "homepage": "https://github.com/daveremy/function-health-mcp",
   "repository": "https://github.com/daveremy/function-health-mcp",
