@@ -1,6 +1,6 @@
 {
   "name": "function-health-mcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Function Health MCP server and CLI — query lab results, detect changes, track biomarkers",
   "type": "module",
   "license": "MIT",
@@ -23,7 +23,9 @@
   },
   "files": [
     "dist",
-    ".claude/skills"
+    ".claude/skills",
+    ".claude-plugin",
+    "skills"
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js dist/mcp.js",

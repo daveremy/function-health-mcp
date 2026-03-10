@@ -4,7 +4,7 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 
 ## Features
 
-- **12 MCP tools** for querying lab results, biomarker deep dives, change detection, and more
+- **13 MCP tools** for querying lab results, biomarker deep dives, change detection, and more
 - **CLI** with matching commands for terminal use
 - **Offline-first** — query tools read from local storage, only sync/check hit the API
 - **Test round model** — automatically groups multi-visit lab results by requisitionId into complete test rounds
@@ -14,7 +14,17 @@ An MCP server and CLI for [Function Health](https://www.functionhealth.com/) lab
 
 ## Quick Start
 
-### 1. Add to Claude Code
+### Option A: Install as Claude Code Plugin
+
+Install from the marketplace for zero-config MCP setup with skills included:
+
+```bash
+claude plugin add daveremy/function-health-mcp
+```
+
+This automatically configures the MCP server and installs the `/fh-lab-results` skill.
+
+### Option B: Manual MCP Setup
 
 Add to your project's `.mcp.json`:
 
@@ -30,7 +40,15 @@ Add to your project's `.mcp.json`:
 }
 ```
 
-### 2. Start using it
+Optionally copy the skills for guided slash commands and background context:
+
+```bash
+mkdir -p .claude/skills
+cp -r node_modules/function-health-mcp/skills/fh-lab-results .claude/skills/
+cp -r node_modules/function-health-mcp/skills/fh-usage .claude/skills/
+```
+
+### Authenticate
 
 First, authenticate via the CLI (password input is hidden):
 
@@ -45,14 +63,6 @@ Then ask Claude about your lab results:
 > "What changed between my last two visits?"
 
 Claude will sync your data and show your results conversationally.
-
-### 3. Install the skill (optional)
-
-Copy the skill into your project for a guided `/fh-lab-results` slash command:
-
-```bash
-cp -r node_modules/function-health-mcp/.claude/skills/lab-results your-project/.claude/skills/
-```
 
 ### Alternative: Install from source
 
@@ -83,6 +93,7 @@ Then use the CLI directly:
 | `fh_changes` | Compare two test rounds: improved, worsened, new, significantly changed |
 | `fh_sync` | Pull latest data from Function Health API |
 | `fh_check` | Lightweight check for new results (no full data fetch) |
+| `fh_notifications` | Read or acknowledge change notifications from syncs |
 | `fh_recommendations` | Health recommendations, optionally filtered by category |
 | `fh_report` | Full clinician report for a visit |
 | `fh_version` | Check installed version and whether an update is available |

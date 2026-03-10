@@ -1,0 +1,10 @@
+{
+  "name": "function-health-mcp-plugins",
+  "owner": { "name": "daveremy" },
+  "plugins": [{
+    "name": "function-health-mcp",
+    "source": { "source": "npm", "package": "function-health-mcp" },
+    "description": "Query Function Health lab results, track biomarker changes, and get health recommendations",
+    "version": "0.5.1"
+  }]
+}
