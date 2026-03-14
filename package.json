@@ -28,7 +28,8 @@
   ],
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js dist/mcp.js",
-    "prepublishOnly": "npm run build",
+    "prepack": "npm run build",
+    "release": "./scripts/release.sh",
     "version": "node -e \"require('fs').writeFileSync('src/version.ts', 'export const VERSION = \\\"' + require('./package.json').version + '\\\";\\n')\" && git add src/version.ts",
     "dev": "tsx src/cli.ts",
     "test": "tsx --test test/*.test.ts"

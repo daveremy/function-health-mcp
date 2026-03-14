@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Auto-recover from revoked Firebase refresh tokens via `FH_EMAIL`/`FH_PASSWORD` environment variable fallback (#18, #19)
+- Diagnostic logging on token refresh failures for easier debugging
+- `fh_status` now returns `authHint` field with actionable guidance when token is invalid
+
+### Added
+- `refreshTokenWithFallback()` with email-match guard to prevent silent account switching
+- Env-var fallback wired into both `getValidTokens()` and client `doRefresh()` paths
+- 7 unit tests for `shouldAttemptEnvLogin()`
+- `scripts/release.sh` — automated release script (version bump, build, publish, marketplace update)
+
+## [0.5.3] - 2026-03-13
+
+### Fixed
+- Skip writing exports when data is unchanged (#6)
+- Use `npx` for plugin MCP server to resolve dependencies
+
+## [0.5.2] - 2026-03-12
+
+### Added
+- Claude Code plugin manifest (`.claude-plugin/plugin.json`) with `npx -y function-health-mcp`
+- Per-repo marketplace (`.claude-plugin/marketplace.json`)
+- Usage reference skill (`skills/fh-usage/`)
+
+## [0.5.0] - 2026-03-11
+
+### Added
+- Change detection notifications (#13)
+- `fh_notifications` tool — read/clear change notifications from syncs
+- `diffMeta()` compares biological age, BMI, recommendations, notes, requisitions, report
+- `buildChangeSummary()` produces human-readable change lines
+- `loadAllExportsAggregated()` merges all rounds for accurate diff
+- Change files capped at 100 (oldest pruned)
+
 ## [0.4.0] - 2026-03-09
 
 ### Added
