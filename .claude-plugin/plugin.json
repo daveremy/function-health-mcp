@@ -1,14 +1,19 @@
 {
   "name": "function-health-mcp",
   "description": "Query Function Health lab results, track biomarker changes, and get health recommendations",
-  "version": "0.5.3",
-  "author": { "name": "daveremy" },
+  "version": "0.5.4",
+  "author": {
+    "name": "daveremy"
+  },
   "homepage": "https://github.com/daveremy/function-health-mcp",
   "repository": "https://github.com/daveremy/function-health-mcp",
   "mcpServers": {
     "function-health": {
       "command": "npx",
-      "args": ["-y", "function-health-mcp"]
+      "args": [
+        "-y",
+        "function-health-mcp"
+      ]
     }
   }
 }
