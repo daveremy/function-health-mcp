@@ -24,7 +24,10 @@ If `authenticated` is true but `hasData` is false:
 2. Then proceed with the requested action
 
 If `tokenValid` is false (expired session):
-1. Instruct the user to run `npx -y -p function-health-mcp function-health login` in their terminal
+1. Check the `authHint` field in the status response for guidance
+2. If `FH_EMAIL` and `FH_PASSWORD` env vars are set, auto-login will be attempted on the next API call — just retry the operation
+3. Otherwise, instruct the user to run `npx -y -p function-health-mcp function-health login` in their terminal
+4. Mention they can set `FH_EMAIL` and `FH_PASSWORD` environment variables for hands-free re-authentication
 
 ## When to use
 

@@ -35,7 +35,7 @@ npx -y -p function-health-mcp function-health login
 
 The `fh_login` MCP tool only checks auth status and directs users to the CLI command. Never attempt to collect credentials through the MCP tool.
 
-Credentials are stored at `~/.function-health/credentials.json` (0o600 permissions). Tokens auto-refresh via Firebase JWT.
+Credentials are stored at `~/.function-health/credentials.json` (0o600 permissions). Tokens auto-refresh via Firebase JWT. If the refresh token is revoked, the server falls back to re-login using `FH_EMAIL` and `FH_PASSWORD` environment variables (if set). Check `authHint` in `fh_status` output for guidance when auth fails.
 
 ## Tool Parameter Patterns
 

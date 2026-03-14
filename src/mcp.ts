@@ -11,6 +11,7 @@ import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
 
 const MAX_HISTORY_CONCURRENCY = 10;
+const ENV_CREDS_TIP = "Tip: Set FH_EMAIL and FH_PASSWORD environment variables for automatic re-authentication when tokens expire.";
 
 const server = new McpServer({ name: "function-health", version: VERSION });
 
@@ -62,9 +63,11 @@ server.registerTool("fh_login", {
     });
   }
 
+  const hasEnvCreds = !!(process.env.FH_EMAIL && process.env.FH_PASSWORD);
   return text({
     authenticated: false,
-    message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx -y -p function-health-mcp function-health login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync.",
+    message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx -y -p function-health-mcp function-health login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync."
+      + (!hasEnvCreds ? `\n\n${ENV_CREDS_TIP}` : ""),
   });
 }));
 
@@ -88,8 +91,16 @@ server.registerTool("fh_status", {
     };
   }));
 
+  const hasEnvCreds = !!(process.env.FH_EMAIL && process.env.FH_PASSWORD);
+  const authHint = (auth.authenticated && !auth.tokenValid)
+    ? (hasEnvCreds
+      ? "Token expired. Auto-login via FH_EMAIL/FH_PASSWORD was attempted but failed. Check that your credentials are correct, or run: npx -y -p function-health-mcp function-health login"
+      : `Token expired. Run: npx -y -p function-health-mcp function-health login\n\n${ENV_CREDS_TIP}`)
+    : undefined;
+
   return text({
     ...auth,
+    ...(authHint ? { authHint } : {}),
     lastSync: syncLog.lastSync || null,
     roundCount: exports.length,
     rounds,
