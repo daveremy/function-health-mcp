@@ -57,6 +57,17 @@ First, authenticate via the CLI (password input is hidden):
 npx -y -p function-health-mcp function-health login
 ```
 
+#### Automatic Re-authentication
+
+Firebase tokens expire after 1 hour and are normally refreshed automatically. If the refresh token is revoked (e.g., after extended inactivity), you can set environment variables for hands-free re-authentication:
+
+```bash
+export FH_EMAIL="your@email.com"
+export FH_PASSWORD="your-password"
+```
+
+With [direnv](https://direnv.net/), add these to your project's `.envrc` for automatic loading. When set, the MCP server will re-login automatically if token refresh fails — no manual intervention needed.
+
 Then ask Claude about your lab results:
 
 > "Show me my lab results"

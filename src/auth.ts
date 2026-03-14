@@ -89,8 +89,9 @@ export async function refreshToken(tokens: AuthTokens): Promise<AuthTokens> {
   });
 
   if (!res.ok) {
-    await res.body?.cancel();
-    throw new Error(`Token refresh failed: ${res.status}`);
+    const body = await res.text().catch(() => "Unknown error");
+    console.error(`[auth] Token refresh failed: ${res.status} ${res.statusText}. ${body}`);
+    throw new Error(`Token refresh failed: ${res.status} ${res.statusText}. ${body}`);
   }
 
   const data = await res.json() as { access_token: string; expires_in: string; refresh_token: string };
@@ -113,6 +114,30 @@ export function isTokenExpired(tokens: AuthTokens): boolean {
   return tokenAge > tokens.expiresIn - TOKEN_REFRESH_BUFFER;
 }
 
+/** Check if env-var login should be attempted. Returns credentials or null. */
+export function shouldAttemptEnvLogin(storedEmail: string): { email: string; password: string } | null {
+  const email = process.env.FH_EMAIL;
+  const password = process.env.FH_PASSWORD;
+  if (!email || !password) return null;
+  // Guard: only fall back if env email matches the stored account (or stored email is empty/legacy)
+  if (storedEmail && storedEmail.toLowerCase() !== email.toLowerCase()) return null;
+  return { email, password };
+}
+
+/** Refresh tokens, falling back to env-var login if refresh fails */
+export async function refreshTokenWithFallback(tokens: AuthTokens): Promise<AuthTokens> {
+  try {
+    return await refreshToken(tokens);
+  } catch (refreshErr) {
+    const envCreds = shouldAttemptEnvLogin(tokens.email);
+    if (envCreds) {
+      console.error("[auth] Refresh failed, attempting login with FH_EMAIL/FH_PASSWORD...");
+      return await login(envCreds.email, envCreds.password);
+    }
+    throw refreshErr;
+  }
+}
+
 export async function getValidTokens(): Promise<AuthTokens> {
   const creds = await loadCredentials();
   if (!creds?.idToken || !creds?.refreshToken) {
@@ -129,7 +154,7 @@ export async function getValidTokens(): Promise<AuthTokens> {
   };
 
   if (isTokenExpired(tokens)) {
-    return await refreshToken(tokens);
+    return await refreshTokenWithFallback(tokens);
   }
 
   return tokens;

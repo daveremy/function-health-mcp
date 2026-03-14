@@ -14,7 +14,7 @@ import type {
   UserProfile,
 } from "./types.js";
 import { ApiError } from "./types.js";
-import { getValidTokens, refreshToken, isTokenExpired } from "./auth.js";
+import { getValidTokens, refreshTokenWithFallback, isTokenExpired } from "./auth.js";
 import { BASE_URL, DEFAULT_HEADERS, delay } from "./utils.js";
 
 const RATE_LIMIT_MS = 250;
@@ -37,7 +37,7 @@ export class FunctionHealthClient {
   private async doRefresh(): Promise<void> {
     if (!this.refreshPromise) {
       this.refreshPromise = (async () => {
-        this.tokens = await refreshToken(this.tokens);
+        this.tokens = await refreshTokenWithFallback(this.tokens);
       })().finally(() => {
         this.refreshPromise = null;
       });
