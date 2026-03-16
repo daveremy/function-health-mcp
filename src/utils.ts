@@ -1,5 +1,57 @@
 import fs from "fs/promises";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { homedir } from "os";
 import type { Biomarker, ExportData, HealthResult, SexDetails } from "./types.js";
+
+// ── Env file helpers ──
+
+/** Parse a .env file into a key-value map. Handles KEY=VALUE, quoted values, and comments. */
+export function parseDotenv(content: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    // Strip matching quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    vars[key] = val;
+  }
+  return vars;
+}
+
+let dotenvCache: Record<string, string> | null = null;
+
+/** Load env vars from .env files (cached). Checks ~/lifeos/.env and ~/.env. */
+function loadDotenvFiles(): Record<string, string> {
+  if (dotenvCache) return dotenvCache;
+  dotenvCache = {};
+  const paths = [
+    resolve(homedir(), "lifeos", ".env"),
+    resolve(homedir(), ".env"),
+  ];
+  for (const p of paths) {
+    try {
+      Object.assign(dotenvCache, parseDotenv(readFileSync(p, "utf-8")));
+    } catch {
+      // File doesn't exist — skip
+    }
+  }
+  return dotenvCache;
+}
+
+/** Get an env var, falling back to .env files when not in process.env.
+ *  This handles MCP plugin processes that spawn without direnv.
+ *  Only falls back to .env files if the var is completely absent from process.env. */
+export function getEnvVar(name: string): string | undefined {
+  if (name in process.env) return process.env[name];
+  return loadDotenvFiles()[name];
+}
 
 // ── File helpers ──
 

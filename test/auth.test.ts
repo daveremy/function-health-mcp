@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { shouldAttemptEnvLogin } from "../src/auth.js";
 
@@ -21,19 +21,20 @@ describe("shouldAttemptEnvLogin", () => {
   });
 
   it("returns null when env vars are not set", () => {
-    delete process.env.FH_EMAIL;
-    delete process.env.FH_PASSWORD;
+    // Use empty strings to override any .env file fallback
+    process.env.FH_EMAIL = "";
+    process.env.FH_PASSWORD = "";
     assert.equal(shouldAttemptEnvLogin("user@example.com"), null);
   });
 
   it("returns null when only FH_EMAIL is set", () => {
     process.env.FH_EMAIL = "user@example.com";
-    delete process.env.FH_PASSWORD;
+    process.env.FH_PASSWORD = "";
     assert.equal(shouldAttemptEnvLogin("user@example.com"), null);
   });
 
   it("returns null when only FH_PASSWORD is set", () => {
-    delete process.env.FH_EMAIL;
+    process.env.FH_EMAIL = "";
     process.env.FH_PASSWORD = "pass123";
     assert.equal(shouldAttemptEnvLogin("user@example.com"), null);
   });

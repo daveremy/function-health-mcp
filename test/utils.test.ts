@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { deriveExportDate, validateDate, isValidDateString, fuzzyMatch, getResultName, getResultValue, buildOutOfRangeSet, filterResults } from "../src/utils.js";
+import { deriveExportDate, validateDate, isValidDateString, fuzzyMatch, getResultName, getResultValue, buildOutOfRangeSet, filterResults, parseDotenv } from "../src/utils.js";
 import { exportsEqual } from "../src/store.js";
 import { makeResult, makeExport } from "./helpers.js";
 
@@ -175,5 +175,31 @@ describe("exportsEqual", () => {
 
   it("returns true for empty exports", () => {
     assert.equal(exportsEqual(makeExport(), makeExport()), true);
+  });
+});
+
+describe("parseDotenv", () => {
+  it("parses KEY=VALUE pairs", () => {
+    assert.deepEqual(parseDotenv("FOO=bar\nBAZ=qux"), { FOO: "bar", BAZ: "qux" });
+  });
+
+  it("strips double quotes", () => {
+    assert.deepEqual(parseDotenv('FOO="bar baz"'), { FOO: "bar baz" });
+  });
+
+  it("strips single quotes", () => {
+    assert.deepEqual(parseDotenv("FOO='bar baz'"), { FOO: "bar baz" });
+  });
+
+  it("skips comments and blank lines", () => {
+    assert.deepEqual(parseDotenv("# comment\n\nFOO=bar\n  # another"), { FOO: "bar" });
+  });
+
+  it("handles values with equals signs", () => {
+    assert.deepEqual(parseDotenv("URL=https://example.com?a=1&b=2"), { URL: "https://example.com?a=1&b=2" });
+  });
+
+  it("returns empty object for empty input", () => {
+    assert.deepEqual(parseDotenv(""), {});
   });
 });

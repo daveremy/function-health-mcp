@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import type { AuthTokens, SavedCredentials } from "./types.js";
-import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt, writeSecure, isFileNotFound, DIR_MODE } from "./utils.js";
+import { BASE_URL, FIREBASE_REFRESH_URL, DEFAULT_HEADERS, delay, safeParseInt, writeSecure, isFileNotFound, DIR_MODE, getEnvVar } from "./utils.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".function-health");
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
@@ -114,10 +114,11 @@ export function isTokenExpired(tokens: AuthTokens): boolean {
   return tokenAge > tokens.expiresIn - TOKEN_REFRESH_BUFFER;
 }
 
-/** Check if env-var login should be attempted. Returns credentials or null. */
+/** Check if env-var login should be attempted. Returns credentials or null.
+ *  Reads from process.env first, then falls back to .env files. */
 export function shouldAttemptEnvLogin(storedEmail: string): { email: string; password: string } | null {
-  const email = process.env.FH_EMAIL;
-  const password = process.env.FH_PASSWORD;
+  const email = getEnvVar("FH_EMAIL");
+  const password = getEnvVar("FH_PASSWORD");
   if (!email || !password) return null;
   // Guard: only fall back if env email matches the stored account (or stored email is empty/legacy)
   if (storedEmail && storedEmail.toLowerCase() !== email.toLowerCase()) return null;

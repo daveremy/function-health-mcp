@@ -59,14 +59,20 @@ npx -y -p function-health-mcp function-health login
 
 #### Automatic Re-authentication
 
-Firebase tokens expire after 1 hour and are normally refreshed automatically. If the refresh token is revoked (e.g., after extended inactivity), you can set environment variables for hands-free re-authentication:
+Firebase tokens expire after 1 hour and are normally refreshed automatically. If the refresh token is revoked (e.g., after extended inactivity), you can provide credentials for hands-free re-authentication:
 
 ```bash
+# Option 1: Environment variables (e.g., in .envrc with direnv)
 export FH_EMAIL="your@email.com"
 export FH_PASSWORD="your-password"
+
+# Option 2: .env file (works without direnv — ideal for MCP plugins)
+# Add to ~/lifeos/.env or ~/.env:
+FH_EMAIL=your@email.com
+FH_PASSWORD=your-password
 ```
 
-With [direnv](https://direnv.net/), add these to your project's `.envrc` for automatic loading. When set, the MCP server will re-login automatically if token refresh fails — no manual intervention needed.
+The MCP server checks `process.env` first, then falls back to `.env` files. This means it works even when launched via `npx` (e.g., as a Claude Code plugin) where direnv isn't active.
 
 Then ask Claude about your lab results:
 
