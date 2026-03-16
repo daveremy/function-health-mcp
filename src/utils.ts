@@ -38,8 +38,8 @@ function loadDotenvFiles(): Record<string, string> {
   for (const p of paths) {
     try {
       Object.assign(dotenvCache, parseDotenv(readFileSync(p, "utf-8")));
-    } catch {
-      // File doesn't exist — skip
+    } catch (err) {
+      if (!isFileNotFound(err)) console.error(`[env] Warning: could not read ${p}:`, (err as Error).message);
     }
   }
   return dotenvCache;
