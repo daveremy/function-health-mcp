@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 - `refreshTokenWithFallback()` with email-match guard to prevent silent account switching
 - Env-var fallback wired into both `getValidTokens()` and client `doRefresh()` paths
-- 7 unit tests for `shouldAttemptEnvLogin()`
+- `.env` file fallback — reads `FH_EMAIL`/`FH_PASSWORD` from `~/lifeos/.env` or `~/.env` when not in `process.env` (fixes MCP plugin auth without direnv)
+- 7 unit tests for `shouldAttemptEnvLogin()`, 6 for `parseDotenv`
 - `scripts/release.sh` — automated release script (version bump, build, publish, marketplace update)
 
 ## [0.5.3] - 2026-03-13

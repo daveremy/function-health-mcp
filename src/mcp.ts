@@ -6,7 +6,7 @@ import { FunctionHealthClient } from "./client.js";
 import { loadCredentials, getValidTokens } from "./auth.js";
 import { loadLatest, loadExport, loadExportResults, saveRoundExport, listExports, getSyncLog, updateRequisitionCount, loadRoundMeta, migrateToRounds, loadAllExportsAggregated, loadChangeNotifications, clearChangeNotifications } from "./store.js";
 import { diffExports, detectAndSaveChanges } from "./diff.js";
-import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS } from "./utils.js";
+import { fuzzyMatch, getResultName, getResultValue, buildCategoryMap, buildOutOfRangeSet, filterResults, resolveSexFilter, resolveSexDetails, findMatchingResults, validateDate, SYNC_COOLDOWN_MS, getEnvVar } from "./utils.js";
 import { VERSION } from "./version.js";
 import type { ExportData } from "./types.js";
 
@@ -63,7 +63,7 @@ server.registerTool("fh_login", {
     });
   }
 
-  const hasEnvCreds = !!(process.env.FH_EMAIL && process.env.FH_PASSWORD);
+  const hasEnvCreds = !!(getEnvVar("FH_EMAIL") && getEnvVar("FH_PASSWORD"));
   return text({
     authenticated: false,
     message: "Not authenticated. Please run this command in your terminal to log in:\n\n  npx -y -p function-health-mcp function-health login\n\nThis keeps your password secure (hidden input). Once logged in, return here and run fh_sync."
@@ -91,7 +91,7 @@ server.registerTool("fh_status", {
     };
   }));
 
-  const hasEnvCreds = !!(process.env.FH_EMAIL && process.env.FH_PASSWORD);
+  const hasEnvCreds = !!(getEnvVar("FH_EMAIL") && getEnvVar("FH_PASSWORD"));
   const authHint = (auth.authenticated && !auth.tokenValid)
     ? (hasEnvCreds
       ? "Token expired. Auto-login via FH_EMAIL/FH_PASSWORD was attempted but failed. Check that your credentials are correct, or run: npx -y -p function-health-mcp function-health login"
