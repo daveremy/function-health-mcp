@@ -1,7 +1,7 @@
 {
   "name": "function-health-mcp",
   "description": "Query Function Health lab results, track biomarker changes, and get health recommendations",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "author": {
     "name": "daveremy"
   },
