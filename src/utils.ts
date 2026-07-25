@@ -80,9 +80,17 @@ export function validateDate(date: string): string {
 
 // ── Shared constants ──
 
-export const BASE_URL = "https://production-member-app-mid-lhuqotpy2a-ue.a.run.app/api/v1";
+// Function Health migrated off the old Cloud Run host (production-member-app-mid-*.run.app,
+// now 404) to a stable custom domain (verified live 2026-07-25: POST /api/v1/login returns
+// 400 "Incorrect username or password" for bad creds, i.e. the endpoint is alive).
+export const BASE_URL = "https://member-app-mid.functionhealth.com/api/v1";
 
-export const FIREBASE_REFRESH_URL = "https://securetoken.googleapis.com/v1/token?key=AIzaSyDnxHI-7Xh7JtQrYzRv8n8wJNl3jH5jKl0";
+// Current Firebase Web API key (extracted from my.functionhealth.com bundle 2026-07-25;
+// old AIzaSyDnxHI-* returned API_KEY_INVALID). NOTE: this key now has securetoken.googleapis.com
+// API-blocked (API_KEY_SERVICE_BLOCKED) — direct Firebase refresh no longer works. FH moved
+// refresh to their own endpoint (POST /api/v1/ezra/member-token/refresh, body {refreshToken}).
+// See refreshToken() — securetoken path is retained as a fallback but expected to fail.
+export const FIREBASE_REFRESH_URL = "https://securetoken.googleapis.com/v1/token?key=AIzaSyBiXl12YtUHgxIYdtF0em_KEBodFtGElSE";
 
 export const DEFAULT_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
